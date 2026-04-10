@@ -29,9 +29,6 @@ A production-ready C# AutoCAD .NET plugin for rigorous topography slope analysis
 
 ---
 
-
----
-
 ### 🚀 安裝與執行 (Install & Run)
 
 **1. 編譯 (Compile)**  
@@ -40,9 +37,9 @@ A production-ready C# AutoCAD .NET plugin for rigorous topography slope analysis
 
 ```text
 > buildV4.bat
-Compiling Civil 3D Grid Slope Tool V4_12...
-SUCCESS: GridSlopeCalculatorV4_12.dll created.
-AutoCAD command: CalcGridSlopeCSV4_12
+Compiling Civil 3D Grid Slope Tool V4...
+SUCCESS: GridSlopeCalculatorV4.dll created.
+AutoCAD command: CalcGridSlopeCSV4
 ```
 
 **2. 載入 (Load Plugin)**  
@@ -53,7 +50,7 @@ AutoCAD command: CalcGridSlopeCSV4_12
 在 AutoCAD 命令列輸入：  
 *Type the command:*
 ```text
-CalcGridSlopeCSV4_12
+CalcGridSlopeCSV4
 ```
 
 ---
@@ -61,7 +58,7 @@ CalcGridSlopeCSV4_12
 ### 💻 使用流程 (Usage Workflow)
 
 ```
-CalcGridSlopeCSV4_12
+CalcGridSlopeCSV4
 │
 ├─ 「方格是否已建立？」 Has grid already been built? [Yes/No]
 │
@@ -116,4 +113,3 @@ CalcGridSlopeCSV4_12
 * **AutoCAD** 2021 或以上 (Civil 3D 相容)
 * **.NET Framework** 4.x
 * **編譯器**: .NET Framework 內建 `csc.exe` (C# 5)
-```
