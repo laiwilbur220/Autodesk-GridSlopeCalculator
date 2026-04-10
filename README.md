@@ -31,22 +31,11 @@ A production-ready C# AutoCAD .NET plugin for rigorous topography slope analysis
 
 ### 🚀 安裝與執行 (Install & Run)
 
-**1. 編譯 (Compile)**  
-執行 `buildV4.bat`，自動偵測原始碼版本並編譯對應的 DLL。  
-*Run `buildV4.bat` — it auto-detects the version from the source code and compiles the matching DLL.*
+**1. 載入 (Load Plugin)**  
+開啟 DWG 地形圖。在 AutoCAD 輸入指令 `NETLOAD`，並選取 `GridSlopeCalculatorV4.dll` 檔案。  
+*In AutoCAD, use `NETLOAD` and select the `GridSlopeCalculatorV4.dll` file.*
 
-```text
-> buildV4.bat
-Compiling Civil 3D Grid Slope Tool V4...
-SUCCESS: GridSlopeCalculatorV4.dll created.
-AutoCAD command: CalcGridSlopeCSV4
-```
-
-**2. 載入 (Load Plugin)**  
-開啟 DWG 地形圖。在 AutoCAD 輸入指令 `NETLOAD`，並選取編譯出的 DLL 檔案。  
-*In AutoCAD, use `NETLOAD` and select the compiled `.dll` file.*
-
-**3. 執行 (Execute Command)**  
+**2. 執行 (Execute Command)**  
 在 AutoCAD 命令列輸入：  
 *Type the command:*
 ```text
@@ -95,6 +84,20 @@ CalcGridSlopeCSV4
 
 * **匯出 CSV (CSV Data Export):**  
   支援 UTF-8 (BOM) 格式直接寫出分析矩陣，確保匯入 Excel 時中文字元完美顯示！
+
+---
+
+### 🛠️ 開發與編譯 (Development & Compile - Optional)
+
+若是修改了 `.cs` 原始碼，請執行 `buildV4.bat`，系統會自動偵測原始碼並重新編譯更新 DLL。  
+*If you edit the source code, run `buildV4.bat` to recompile the plugin automatically.*
+
+```text
+> buildV4.bat
+Compiling Civil 3D Grid Slope Tool V4...
+SUCCESS: GridSlopeCalculatorV4.dll created.
+AutoCAD command: CalcGridSlopeCSV4
+```
 
 ---
 
