@@ -107,8 +107,6 @@ CalcGridSlopeCSV4_12
 |------|---------|
 | `GridSlopeCalculatorV4.cs` | V4 主程式原始碼 (Main source code) |
 | `buildV4.bat` | 自動偵測版本的編譯腳本 (Auto-version build script) |
-| `ArrowCode.txt` | 37 頂點輪廓箭頭模板定義 (Arrow template vertices) |
-| `GridSlopeCalculatorV3.cs` | V3 舊版原始碼 (Legacy V3 source, for reference) |
 | `acmgd.dll` / `acdbmgd.dll` / `accoremgd.dll` | AutoCAD .NET API 參考組件 |
 
 ---
