@@ -30,10 +30,6 @@
 - **編譯器**：若需自行編譯，需使用內建的 `csc.exe` (C# 5)
 
 ***
-
-
-
-
 ***
 
 ## 快速開始 (Getting Started)
@@ -126,6 +122,45 @@
    └─ 匯出完成 (Export Complete)
        └─ 不觸發重新運算，直接產生最新的 .xlsx 檔案
    ```
+
+## 其他細節說明
+
+###  關於坵塊法 (About the Grid Method)
+
+**一、目的 (Purpose)**  
+坵塊法主要用於有實測地形圖時的**坡度分析**，藉由量測並計算出特定方格內的平均坡度，作為**山坡地範圍劃定、檢討變更**及**土地可利用限度查定**時的法定基準。  
+*The Grid Method calculates average grid slopes to legally delineate and review slopeland boundaries or determine slopeland utilization limits based on topographic maps.*
+
+**二、計算方式 (Calculation Method)**
+1. **劃設方格 (Draw a Grid):** 在實測地形圖上，每 10 公尺或 25 公尺畫一方格。
+2. **計算交點 (Count Intersections):** 算出每方格各邊與等高線相交的交點數量總和 (**n** 值)。
+3. **代入公式 (Apply Formula):** 利用專用公式求得坵塊內平均坡度：**S(%) = (n × π × Δh / 8L) × 100**
+   * **S**: 方格內平均坡度 (%) / *Average slope*
+   * **n**: 等高線與方格四邊交點總數 / *Total intersections*
+   * **Δh**: 等高線間距 (公尺) / *Contour interval*
+   * **L**: 方格邊長 (公尺) / *Grid side length*
+
+**三、法規出處 (Regulatory Sources)**  
+根據《110水土保持相關法規彙編》 (Taiwan Soil and Water Conservation Regulations):
+1. 《水土保持技術規範》第二十五條 
+2. 《山坡地範圍劃定及檢討變更作業要點》第七條
+3. 《山坡地土地可利用限度查定工作要點》第四點
+
+###  開發與編譯 (Development & Compile)
+
+本專案採行「使用與開發分離」結構設計：
+- **一般使用者**：直接使用外層的 `GridMethodSlopeCalculator.dll` 載入 AutoCAD 即可。
+- **開發者**：若需修改功能，請進入 `GridMethodSlopeCalculator_Edit` 資料夾。該資料夾包含完整的原始碼、AutoCAD 參考庫與編譯環境。
+
+修改原始碼後，請在 `GridMethodSlopeCalculator_Edit` 資料夾內執行 `build.bat`，系統會自動編譯並覆蓋原有的 DLL 檔案。  
+*If you wish to edit the source code, navigate to the `GridMethodSlopeCalculator_Edit` folder and run `build.bat` to recompile the plugin.*
+
+```text
+> cd GridMethodSlopeCalculator_Edit
+> build.bat
+Compiling Grid Method Slope Calculator...
+SUCCESS: GridMethodSlopeCalculator.dll created.
+```
 
 
 
