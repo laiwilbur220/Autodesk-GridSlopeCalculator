@@ -51,12 +51,74 @@
 
 1. **初始計算 (`GM1_Calc`)**
    啟動主要運算流程。系統會提示您建立方格、輸入等高線間距、選取圖面特徵，並最終產出視覺化的網格標示與統計摘要表。
+
+   ```text
+   GM1_Calc
+   │
+   ├─ 「方格是否已建立？」 Has grid already been built? [Y/N]
+   │
+   ├─ [N] ── 自動產生方格 (Auto Grid Generation)
+   │   ├─ 1. 選擇計畫範圍 (Select project boundary)
+   │   ├─ 2. 確認範圍選取 (Confirm boundary — highlight + Y/N)
+   │   ├─ 3. 選擇方格尺寸 [25m / 10m] (default 25m)
+   │   └─ 4. 自動建立 UCS 對齊方格，最佳化偏移防止邊界重疊
+   │
+   ├─ [Y] ── 輸入方格邊長 L (Enter grid side length)
+   │
+   ├─ 輸入等高線間距 Δh (Enter contour interval)
+   ├─ 是否匯出 XLSX？ (Export to XLSX? [Y/N])
+   │
+   ├─ 選取方格/等高線/計畫範圍 (Select grids, contours, boundary)
+   ├─ 指定報表插入點 (Pick table insertion point)
+   │
+   └─ 計算完成 (Process):
+       ├─ 計算坡度與方向 (Calculate slope & direction)
+       ├─ k-NN IDW 方向內插 (Interpolate missing directions)
+       ├─ 繪製標註與箭頭 (Draw annotations & arrows)
+       ├─ 產生統計摘要表 (Generate statistical summary tables)
+       └─ 匯出 XLSX (Export to XLSX)
+   ```
    
 2. **手動微調與更新 (`GM2_Update`)**
    若您手動編輯了網格內的「交點數」或「方向文字」，請執行此指令。系統將會更新快取資料、重新產生坡度網底，並可選擇覆寫更新畫面中的統計表。
 
+   ```text
+   GM2_Update
+   │
+   ├─ 手動修改圖面 (User edits on the drawing):
+   │   ├─ 修改交點數 (Edit intersection count)
+   │   └─ 修改方向文字 (Edit direction text)
+   │
+   ├─ 執行指令 (Execute GM2_Update)
+   │
+   ├─ 讀取快取 (Read NOD Cache)
+   ├─ 掃描圖面變更 (Scan DOM for text modifications)
+   │   └─ 若發現方向變更 → 自動重繪中心箭頭 (Arrow auto-correction)
+   │
+   ├─ 重新產生坡度網底 (Regenerate slope hatch)
+   │
+   ├─ 詢問更新報表 (Regenerate Summary Table? [Y/N])
+   │   ├─ [Y] ── 原地覆蓋新統計表 (Replace table in place)
+   │   └─ [N] ── 保留舊表 (Keep existing table)
+   │
+   └─ 更新完成 (Update Complete)
+       └─ 自動匯出遞增檔名之新 XLSX (Export new XLSX)
+   ```
+
 3. **獨立報表匯出 (`GM3_Export`)**
    當您僅需要將現有圖面上的分析結果輸出成報表，而不需要重新計算時，執行此指令即可直接生成 `.xlsx` 檔案。
+
+   ```text
+   GM3_Export
+   │
+   ├─ 執行指令 (Execute GM3_Export)
+   │
+   ├─ 讀取快取 (Read NOD Cache)
+   ├─ 掃描現有圖面資料 (Scan current drawing grid data)
+   │
+   └─ 匯出完成 (Export Complete)
+       └─ 不觸發重新運算，直接產生最新的 .xlsx 檔案
+   ```
 
 
 
