@@ -32,8 +32,8 @@ A production-ready C# AutoCAD .NET plugin for rigorous topography slope analysis
 ###  安裝與執行 (Install & Run)
 
 **1. 載入 (Load Plugin)**  
-開啟 DWG 地形圖。在 AutoCAD 輸入指令 `NETLOAD`，並選取 `GridSlopeCalculatorV6.dll` 檔案。  
-*In AutoCAD, use `NETLOAD` and select the `GridSlopeCalculatorV6.dll` file.*
+開啟 DWG 地形圖。在 AutoCAD 輸入指令 `NETLOAD`，並選取 `GridMethodSlopeCalculator.dll` 檔案。  
+*In AutoCAD, use `NETLOAD` and select the `GridMethodSlopeCalculator.dll` file.*
 
 **2. 執行 (Execute Command)**  
 在 AutoCAD 命令列輸入：  
@@ -78,7 +78,7 @@ GM1_Calc
     └─ 匯出 XLSX (Export to XLSX)
 ```
 
-**更新流程 (Update Workflow):**
+**使用者手動修改後更新流程 (User-Initiated Update Workflow):**
 若使用者在圖面上**手動修改了交點數或坡向文字** (Manual Edits)：
 1. 執行 `GM2_Update`
 2. 系統讀取 NOD 暫存數據，掃描方格內的使用者文字 (DOM Scraping by Layer)
@@ -86,6 +86,11 @@ GM1_Calc
 4. 自動消除警告 (NOMUTT) 並重新產生坡度網底 (Hatch)
 5. 問答 `Regenerate Summary Table? [Y/N]`，若選擇 `Y` 則自動在原地覆蓋新表格
 6. 自動遞增檔名 (Increment filename) 防止 Excel 檔案鎖死，並輸出新 XLSX
+
+**獨立匯出 (Standalone Export):**
+若只需將圖面現有數據輸出至 Excel，無須重新計算或更新畫面：
+1. 執行 `GM3_Export`
+2. 系統讀取 NOD 參數並掃描畫面資料，直接輸出最新的 `.xlsx` 報表
 
 ---
 
@@ -112,41 +117,34 @@ GM1_Calc
 
 ---
 
-###  V6 新增功能 (What's New in V6)
-
-| Feature | Description |
-|---------|-------------|
-| **k-NN IDW 方向內插** | 等高線不足的方格自動從 8 個最近有效鄰居內插方向 |
-| **箭頭置中** | 方向箭頭改為方格正中心，取代舊版上偏位置 |
-| **箭頭自動校正** | `GM2_Update` 偵測方向文字變更後自動刪除舊箭頭並重繪 |
-| **Layer-based 方向抓取** | 更新指令改用圖層篩選 (`Grid_Outputs_DirText`) 提升文字識別可靠性 |
-| **統計摘要表** | 新增坡度分級 + 坡向分佈兩張 AutoCAD 表格，取代舊版圖例與指南針 |
-| **獨立 NOD Key** | V6 使用 `GridSlopeParamsV6`，與 V5 資料互不干擾 |
-
----
-
 ###  開發與編譯 (Development & Compile)
 
-若是修改了 `.cs` 原始碼，請執行 `buildV6.bat`，系統會自動編譯更新 DLL。  
-*If you edit the source code, run `buildV6.bat` to recompile the plugin automatically.*
+本專案採行「使用與開發分離」結構設計：
+- **一般使用者**：直接使用外層的 `GridMethodSlopeCalculator.dll` 載入 AutoCAD 即可。
+- **開發者**：若需修改功能，請進入 `GridMethodSlopeCalculator_Edit` 資料夾。該資料夾包含完整的原始碼、AutoCAD 參考庫與編譯環境。
+
+修改原始碼後，請在 `GridMethodSlopeCalculator_Edit` 資料夾內執行 `build.bat`，系統會自動編譯並覆蓋原有的 DLL 檔案。  
+*If you wish to edit the source code, navigate to the `GridMethodSlopeCalculator_Edit` folder and run `build.bat` to recompile the plugin.*
 
 ```text
-> buildV6.bat
-Compiling Civil 3D Grid Slope Tool V6_1...
-SUCCESS: GridSlopeCalculatorV6.dll created.
-AutoCAD commands: GM1_Calc, GM2_Update, GM3_Export
+> cd GridMethodSlopeCalculator_Edit
+> build.bat
+Compiling Grid Method Slope Calculator...
+SUCCESS: GridMethodSlopeCalculator.dll created.
 ```
 
 ---
 
 ###  檔案結構 (File Structure)
 
-| File | Purpose |
-|------|---------|
-| `GridSlopeCalculatorV6.cs` | V6 主程式原始碼 (Main source code — latest) |
-| `buildV6.bat` | V6 編譯腳本 (Build script) |
-| `GridSlopeCalculatorV6.dll` | 編譯輸出 (Compiled plugin) |
-| `acmgd.dll` / `acdbmgd.dll` / `accoremgd.dll` | AutoCAD .NET API 參考組件 |
+| File / Folder | Purpose |
+|---------------|---------|
+| `README.md` | 本使用說明書 (Documentation) |
+| `GridMethodSlopeCalculator.dll` | 供使用者直接載入的編譯完成檔 (Ready-to-use plugin) |
+|  `GridMethodSlopeCalculator_Edit/` | **原始碼編輯區 (Developer workspace)** |
+| ├── `GridMethodSlopeCalculator.cs` | 主程式 C# 原始碼 (Source code) |
+| ├── `build.bat` | 一鍵自動編譯腳本 (Build script) |
+| └── `acmgd.dll`... | AutoCAD .NET API 編譯專用參考組件 |
 
 
 ###  系統需求 (Requirements)

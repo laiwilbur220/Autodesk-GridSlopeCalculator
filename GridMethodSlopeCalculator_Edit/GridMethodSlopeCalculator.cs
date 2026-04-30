@@ -27,7 +27,7 @@ namespace Civil3DGridMethod
     ///   ??NOD-based parameter persistence for update command
     ///   ??Native XLSX export with live Excel formulas
     /// </summary>
-    public class GridSlopeCalculatorV6
+    public class GridMethodSlopeCalculator
     {
         #region Constants
 
@@ -73,7 +73,7 @@ namespace Civil3DGridMethod
         private const int MaxLegendRowsPerChunk = 26;
 
         // NOD (Named Object Dictionary) key for persistent parameter storage
-        private const string NOD_KEY = "GridSlopeParamsV6";
+        private const string NOD_KEY = "GridMethodSlopeParams";
 
         // Slope classification layers (class name, layer name, ACI color index)
         private static readonly string[] SlopeClassNames = { "\u4E00\u7D1A\u5761", "\u4E8C\u7D1A\u5761", "\u4E09\u7D1A\u5761", "\u56DB\u7D1A\u5761", "\u4E94\u7D1A\u5761", "\u516D\u7D1A\u5761", "\u4E03\u7D1A\u5761" };
@@ -2991,20 +2991,3 @@ namespace Civil3DGridMethod
         #endregion
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
