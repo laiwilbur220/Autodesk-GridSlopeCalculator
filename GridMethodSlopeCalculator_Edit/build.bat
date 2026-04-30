@@ -1,7 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 
-echo Compiling Grid Slope Tool V6_4...
+echo Compiling Grid Slope Tool...
 echo.
 
 set "WINBASE=C:\Windows\Microsoft.NET\assembly\GAC_MSIL\WindowsBase\v4.0_4.0.0.0__31bf3856ad364e35\WindowsBase.dll"
