@@ -2,7 +2,7 @@
 
 # AutoCAD 「坵塊法」網格坡度與坡向計算工具 (Grid Method Slope Calculator)
 
-本專案是一個專為 AutoCAD .NET 平台開發的擴充套件，旨在自動化執行「坵塊法」的大範圍地形坡度運算與正北坡向分析。本工具專注於符合台灣相關法規標準（如山坡地範圍劃定、土地可利用限度查定），提供精確的坡度分級與方向判定，並能一鍵產出完整的統計報表與原生 Excel 報表。
+本專案是一個專為 AutoCAD .NET 平台開發的擴充套件，旨在自動化執行水土保持計畫中「坵塊法」的大範圍地形坡度運算與坡向分析。本工具專注於符合台灣相關法規標準，提供使用者容易操作、結果精確的坡度分級與方向判定，並能一鍵產出完整的統計報表與原生 Excel 報表。
 
 ## 核心特色 (Features)
 
@@ -21,6 +21,7 @@
 | `GridMethodSlopeCalculator_Edit/` | 開發者專用目錄，內含原始碼 (`.cs`)、編譯腳本 (`build.bat`) 與相關 API 組件 |
 | `UNBLOCK.bat` | 解除 Windows 安全鎖定（ZIP 下載後必須執行） |
 | `README.md` | 使用說明書 |
+| `DetailedExplaination_細節說明.md` | 細節說明書 |
 
 ## 系統需求 (Prerequisites)
 
