@@ -156,10 +156,10 @@ namespace Civil3DGridMethod
         #region Main AutoCAD Command
 
         /// <summary>
-        /// Main entry point ??AutoCAD command: CalcGridSlopeCSV6
+        /// Main entry point ??AutoCAD command: GM1_Calc
         /// Workflow: grid existence check ??(optional grid generation) ??slope calculation ??output.
         /// </summary>
-        [CommandMethod("CalcGridSlopeCSV6")]
+        [CommandMethod("GM1_Calc")]
         public void CalculateGridSlope()
         {
             Document doc = Application.DocumentManager.MdiActiveDocument;
@@ -592,12 +592,12 @@ namespace Civil3DGridMethod
 
                         // Statistical summary table (slope classification + direction distribution)
                         Point3d statTablePt = tableInsertPtWCS + (cs.Xaxis * (summaryTableWidth + 20.0));
-                        GenerateStatisticalTable(tr, btr, db, cs, validGrids, statTablePt, layerTable);
+                        ObjectId[] statIds = GenerateStatisticalTable(tr, btr, db, cs, validGrids, statTablePt, layerTable);
 
                         if (shouldExportXlsx) ExportToXLSX(doc, validGrids, sideLength, contourInterval);
 
-                        // Save params to NOD for UpdateGridSlopeCSV6
-                        SaveParamsToNOD(db, tr, sideLength, contourInterval, summaryTableId);
+                        // Save params to NOD for GM2_Update
+                        SaveParamsToNOD(db, tr, sideLength, contourInterval, summaryTableId, statIds[0], statIds[1]);
 
                         tr.Commit();
                         ed.WriteMessage(string.Format("\nSuccess! Processed {0} grids.", validGrids.Count));
@@ -1217,8 +1217,9 @@ namespace Civil3DGridMethod
         /// <summary>
         /// Generates a statistical summary AutoCAD Table matching the XLSX output format.
         /// Contains two sub-tables: slope classification summary and direction distribution.
+        /// Returns an array containing [Table1Id, Table2Id].
         /// </summary>
-        private void GenerateStatisticalTable(Transaction tr, BlockTableRecord btr, Database db,
+        private ObjectId[] GenerateStatisticalTable(Transaction tr, BlockTableRecord btr, Database db,
             CoordinateSystem3d cs, List<GridData> validGrids, Point3d insertPt, ObjectId layerTable)
         {
             // ===== Compute statistics =====
@@ -1267,9 +1268,9 @@ namespace Civil3DGridMethod
                 }
             }
 
-            // ===== Table 1: Slope Classification (10 rows x 5 cols) =====
-            // Row 0: Header, Rows 1-7: Classes, Row 8: Totals, Row 9: Average slope
-            int t1Rows = 10;
+            // ===== Table 1: Slope Classification (11 rows x 5 cols) =====
+            // Row 0: Title, Row 1: Header, Rows 2-8: Classes, Row 9: Totals, Row 10: Average slope
+            int t1Rows = 11;
             int t1Cols = 5;
 
             Table tb1 = new Table();
@@ -1281,7 +1282,7 @@ namespace Civil3DGridMethod
             tb1.SetSize(t1Rows, t1Cols);
 
             // Column widths
-            double[] t1Widths = { 14.0, 18.0, 10.0, 16.0, 14.0 };
+            double[] t1Widths = { 25.0, 28.0, 15.0, 22.0, 18.0 };
             for (int c = 0; c < t1Cols; c++)
                 tb1.Columns[c].Width = t1Widths[c];
             for (int r = 0; r < t1Rows; r++)
@@ -1294,43 +1295,48 @@ namespace Civil3DGridMethod
                 }
             }
 
+            // Title
+            tb1.MergeCells(CellRange.Create(tb1, 0, 0, 0, t1Cols - 1));
+            tb1.Cells[0, 0].TextString = "\u5761\u5EA6\u5206\u6790\u7D71\u8A08\u8868"; // 坡度分析統計表
+            tb1.Cells[0, 0].TextHeight = 3.5;
+
             // Headers
             string[] t1Headers = { "\u5761\u5EA6\u7D1A\u5225", "\u5761\u5EA6\u7BC4\u570DS(%)", "\u65B9\u683C\u6578", "\u9762\u7A4D(m2)", "\u767E\u5206\u6BD4(%)" };
             for (int c = 0; c < t1Cols; c++)
-                tb1.Cells[0, c].TextString = t1Headers[c];
+                tb1.Cells[1, c].TextString = t1Headers[c];
 
             // Data rows
             for (int i = 0; i < 7; i++)
             {
-                tb1.Cells[i + 1, 0].TextString = SlopeClassNames[i];
-                tb1.Cells[i + 1, 1].TextString = SlopeClassRanges[i];
-                tb1.Cells[i + 1, 2].TextString = slopeClassCounts[i].ToString();
-                tb1.Cells[i + 1, 3].TextString = string.Format("{0:F2}", slopeClassAreas[i]);
-                tb1.Cells[i + 1, 4].TextString = totalArea > 0
+                tb1.Cells[i + 2, 0].TextString = SlopeClassNames[i];
+                tb1.Cells[i + 2, 1].TextString = SlopeClassRanges[i];
+                tb1.Cells[i + 2, 2].TextString = slopeClassCounts[i].ToString();
+                tb1.Cells[i + 2, 3].TextString = string.Format("{0:F2}", slopeClassAreas[i]);
+                tb1.Cells[i + 2, 4].TextString = totalArea > 0
                     ? string.Format("{0:F2}", slopeClassAreas[i] / totalArea * 100) : "0.00";
             }
 
             // Totals row
-            tb1.Cells[8, 0].TextString = "\u5408\u3000\u8A08";
-            tb1.Cells[8, 2].TextString = totalCount.ToString();
-            tb1.Cells[8, 3].TextString = string.Format("{0:F2}", totalArea);
-            tb1.Cells[8, 4].TextString = "100.00";
+            tb1.Cells[9, 0].TextString = "\u5408\u3000\u8A08";
+            tb1.Cells[9, 2].TextString = totalCount.ToString();
+            tb1.Cells[9, 3].TextString = string.Format("{0:F2}", totalArea);
+            tb1.Cells[9, 4].TextString = "100.00";
 
             // Average slope row
-            tb1.Cells[9, 0].TextString = "\u5E73\u5747\u5761\u5EA6(%)";
-            tb1.Cells[9, 2].TextString = string.Format("{0:F2}", summary.MeanSlope);
+            tb1.Cells[10, 0].TextString = "\u5E73\u5747\u5761\u5EA6(%)";
+            tb1.Cells[10, 2].TextString = string.Format("{0:F2}", summary.MeanSlope);
 
             btr.AppendEntity(tb1);
             tr.AddNewlyCreatedDBObject(tb1, true);
 
             // ===== Table 2: Direction Distribution (12 rows x 5 cols) =====
-            // Row 0: Header, Rows 1-8: Directions, Row 9: blank spacer, Row 10: Totals, Row 11: Dominant direction
+            // Row 0: Title, Row 1: Header, Rows 2-9: Directions, Row 10: Totals, Row 11: Dominant direction
             int t2Rows = 12;
             int t2Cols = 5;
 
-            // Position table 2 below table 1 with some spacing
-            double t1Height = t1Rows * 6.0;
-            Point3d t2InsertPt = insertPt - (cs.Yaxis * (t1Height + 10.0));
+            // Position table 2 to the right of table 1 with some spacing
+            double t1TotalWidth = 25.0 + 28.0 + 15.0 + 22.0 + 18.0;
+            Point3d t2InsertPt = insertPt + (cs.Xaxis * (t1TotalWidth + 20.0));
 
             Table tb2 = new Table();
             tb2.TableStyle = db.Tablestyle;
@@ -1340,7 +1346,7 @@ namespace Civil3DGridMethod
             tb2.Direction = cs.Xaxis;
             tb2.SetSize(t2Rows, t2Cols);
 
-            double[] t2Widths = { 12.0, 16.0, 10.0, 16.0, 14.0 };
+            double[] t2Widths = { 25.0, 20.0, 15.0, 22.0, 18.0 };
             for (int c = 0; c < t2Cols; c++)
                 tb2.Columns[c].Width = t2Widths[c];
             for (int r = 0; r < t2Rows; r++)
@@ -1353,23 +1359,26 @@ namespace Civil3DGridMethod
                 }
             }
 
+            // Title
+            tb2.MergeCells(CellRange.Create(tb2, 0, 0, 0, t2Cols - 1));
+            tb2.Cells[0, 0].TextString = "\u5761\u5411\u5206\u6790\u7D71\u8A08\u8868"; // 坡向分析統計表
+            tb2.Cells[0, 0].TextHeight = 3.5;
+
             // Headers
             string[] t2Headers = { "\u5761\u5411\u7D1A\u5E8F", "\u5761\u5411\u5225", "\u65B9\u683C\u6578", "\u9762\u7A4D(m2)", "\u767E\u5206\u6BD4(%)" };
             for (int c = 0; c < t2Cols; c++)
-                tb2.Cells[0, c].TextString = t2Headers[c];
+                tb2.Cells[1, c].TextString = t2Headers[c];
 
             // Data rows
             for (int i = 0; i < 8; i++)
             {
-                tb2.Cells[i + 1, 0].TextString = (i + 1).ToString();
-                tb2.Cells[i + 1, 1].TextString = DirLabels[i];
-                tb2.Cells[i + 1, 2].TextString = dirCounts[i].ToString();
-                tb2.Cells[i + 1, 3].TextString = string.Format("{0:F2}", dirAreas[i]);
-                tb2.Cells[i + 1, 4].TextString = totalArea > 0
+                tb2.Cells[i + 2, 0].TextString = (i + 1).ToString();
+                tb2.Cells[i + 2, 1].TextString = DirLabels[i];
+                tb2.Cells[i + 2, 2].TextString = dirCounts[i].ToString();
+                tb2.Cells[i + 2, 3].TextString = string.Format("{0:F2}", dirAreas[i]);
+                tb2.Cells[i + 2, 4].TextString = totalArea > 0
                     ? string.Format("{0:F2}", dirAreas[i] / totalArea * 100) : "0.00";
             }
-
-            // Spacer row 9 is left empty
 
             // Totals row
             int dirTotalCount = 0;
@@ -1388,6 +1397,8 @@ namespace Civil3DGridMethod
 
             btr.AppendEntity(tb2);
             tr.AddNewlyCreatedDBObject(tb2, true);
+
+            return new ObjectId[] { tb1.ObjectId, tb2.ObjectId };
         }
 
         #endregion
@@ -1808,13 +1819,15 @@ namespace Civil3DGridMethod
            /// <summary>
         /// Saves grid parameters (L, ?h) and Table ObjectId to the drawing's Named Object Dictionary.
         /// </summary>
-        private void SaveParamsToNOD(Database db, Transaction tr, double sideLength, double contourInterval, ObjectId tableId)
+        private void SaveParamsToNOD(Database db, Transaction tr, double sideLength, double contourInterval, ObjectId tableId, ObjectId statTb1, ObjectId statTb2)
         {
             DBDictionary nod = (DBDictionary)tr.GetObject(db.NamedObjectsDictionaryId, OpenMode.ForWrite);
             ResultBuffer rb = new ResultBuffer(
                 new TypedValue((int)DxfCode.Real, sideLength),
                 new TypedValue((int)DxfCode.Real, contourInterval),
-                new TypedValue((int)DxfCode.SoftPointerId, tableId)
+                new TypedValue((int)DxfCode.SoftPointerId, tableId),
+                new TypedValue((int)DxfCode.SoftPointerId, statTb1),
+                new TypedValue((int)DxfCode.SoftPointerId, statTb2)
             );
 
             if (nod.Contains(NOD_KEY))
@@ -1835,12 +1848,13 @@ namespace Civil3DGridMethod
         /// Loads grid parameters from the drawing's Named Object Dictionary.
         /// Returns true if found.
         /// </summary>
-        private bool LoadParamsFromNOD(Database db, Transaction tr, out double sideLength, out double contourInterval, out ObjectId tableId)
+        private bool LoadParamsFromNOD(Database db, Transaction tr, out double sideLength, out double contourInterval, out ObjectId tableId, out ObjectId statTb1, out ObjectId statTb2)
         {
             sideLength = 0;
             contourInterval = 0;
             tableId = ObjectId.Null;
-            tableId = ObjectId.Null;
+            statTb1 = ObjectId.Null;
+            statTb2 = ObjectId.Null;
             DBDictionary nod = (DBDictionary)tr.GetObject(db.NamedObjectsDictionaryId, OpenMode.ForRead);
             if (nod.Contains(NOD_KEY))
             {
@@ -1852,6 +1866,12 @@ namespace Civil3DGridMethod
                     contourInterval = (double)values[1].Value;
                     if (values.Length >= 3) {
                         tableId = (ObjectId)values[2].Value;
+                    }
+                    if (values.Length >= 4) {
+                        statTb1 = (ObjectId)values[3].Value;
+                    }
+                    if (values.Length >= 5) {
+                        statTb2 = (ObjectId)values[4].Value;
                     }
                     return true;
                 }
@@ -1867,7 +1887,7 @@ namespace Civil3DGridMethod
         /// Spatial update command: re-syncs existing MText + Hatch inside each grid cell
         /// after contour edits, using Editor.SelectCrossingPolygon.
         /// </summary>
-        [CommandMethod("UpdateGridSlopeCSV6")]
+        [CommandMethod("GM2_Update")]
         public void UpdateGridSlope()
         {
             Document doc = Application.DocumentManager.MdiActiveDocument;
@@ -1880,9 +1900,11 @@ namespace Civil3DGridMethod
                 {
                     double sideLength, contourInterval;
                     ObjectId tableId = ObjectId.Null;
-                    if (!LoadParamsFromNOD(db, tr, out sideLength, out contourInterval, out tableId))
+                    ObjectId statTb1 = ObjectId.Null;
+                    ObjectId statTb2 = ObjectId.Null;
+                    if (!LoadParamsFromNOD(db, tr, out sideLength, out contourInterval, out tableId, out statTb1, out statTb2))
                     {
-                        ed.WriteMessage("\nNo saved parameters found. Run CalcGridSlopeCSV6 first.");
+                        ed.WriteMessage("\nNo saved parameters found. Run GM1_Calc first.");
                         return;
                     }
                     ed.WriteMessage(string.Format("\nLoaded from NOD: L={0}, ?h={1}", sideLength, contourInterval));
@@ -2172,6 +2194,8 @@ namespace Civil3DGridMethod
 
                         // Export XLSX
                         ObjectId newTableId = tableId;
+                        ObjectId newStatTb1 = statTb1;
+                        ObjectId newStatTb2 = statTb2;
                         PromptKeywordOptions pkoTable = new PromptKeywordOptions(
                             "\nRegenerate Summary Table? [Y/N] ", "Y N");
                         pkoTable.Keywords.Default = "Y";
@@ -2192,6 +2216,20 @@ namespace Civil3DGridMethod
                                     }
                                 } catch { }
                             }
+                            if (statTb1 != ObjectId.Null)
+                            {
+                                try {
+                                    Table t = tr.GetObject(statTb1, OpenMode.ForWrite) as Table;
+                                    if (t != null && !t.IsErased) t.Erase();
+                                } catch { }
+                            }
+                            if (statTb2 != ObjectId.Null)
+                            {
+                                try {
+                                    Table t = tr.GetObject(statTb2, OpenMode.ForWrite) as Table;
+                                    if (t != null && !t.IsErased) t.Erase();
+                                } catch { }
+                            }
 
                             if (!pointFound)
                             {
@@ -2206,6 +2244,13 @@ namespace Civil3DGridMethod
                             if (pointFound) {
                                 ObjectId layerTable = GetOrCreateLayer(db, tr, "Grid_Outputs_Table", 7);
                                 newTableId = GenerateSummaryTable(tr, btr, db, cs, validGrids, tableInsertPtWCS, layerTable);
+                                
+                                int mainChunks = (validGrids.Count == 0) ? 1 : ((validGrids.Count - 1) / MaxSummaryRowsPerChunk) + 1;
+                                double summaryTableWidth = mainChunks * 88.0;
+                                Point3d statTablePt = tableInsertPtWCS + (cs.Xaxis * (summaryTableWidth + 20.0));
+                                ObjectId[] statIds = GenerateStatisticalTable(tr, btr, db, cs, validGrids, statTablePt, layerTable);
+                                newStatTb1 = statIds[0];
+                                newStatTb2 = statIds[1];
                             }
                         }
 
@@ -2217,11 +2262,187 @@ namespace Civil3DGridMethod
                         if (prExport.Status == PromptStatus.OK && prExport.StringResult == "Y")
                             ExportToXLSX(doc, validGrids, sideLength, contourInterval);
 
-                        SaveParamsToNOD(db, tr, sideLength, contourInterval, newTableId);
+                        SaveParamsToNOD(db, tr, sideLength, contourInterval, newTableId, newStatTb1, newStatTb2);
                         tr.Commit();
                         ed.WriteMessage(string.Format("\nUpdate complete! Processed {0} grids.", validGrids.Count));
                         ed.WriteMessage("\ngrid data has correctly updated\n");
                         
+                    }
+                    finally
+                    {
+                        if (boundaryRegion != null) boundaryRegion.Dispose();
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                ed.WriteMessage(string.Format("\nError: {0}\n{1}", ex.Message, ex.StackTrace));
+            }
+        }
+
+        /// <summary>
+        /// Reads the current grids from the drawing and outputs an XLSX file.
+        /// Useful if the user skipped the export step previously or wants to re-export.
+        /// </summary>
+        [CommandMethod("GM3_Export")]
+        public void ExportGridSlopeXLSX()
+        {
+            Document doc = Application.DocumentManager.MdiActiveDocument;
+            Database db = doc.Database;
+            Editor ed = doc.Editor;
+
+            try
+            {
+                using (Transaction tr = db.TransactionManager.StartTransaction())
+                {
+                    double sideLength, contourInterval;
+                    ObjectId tableId = ObjectId.Null;
+                    ObjectId statTb1 = ObjectId.Null;
+                    ObjectId statTb2 = ObjectId.Null;
+                    if (!LoadParamsFromNOD(db, tr, out sideLength, out contourInterval, out tableId, out statTb1, out statTb2))
+                    {
+                        ed.WriteMessage("\nNo saved parameters found. Run GM1_Calc first.");
+                        return;
+                    }
+                    ed.WriteMessage(string.Format("\nLoaded from NOD: L={0}, ?h={1}", sideLength, contourInterval));
+
+                    PromptSelectionResult psrAllGrids = GetSelectionByLayer(ed, tr, "GRID(s)", "LWPOLYLINE,POLYLINE");
+                    if (psrAllGrids == null) return;
+
+                    PromptEntityOptions peo = new PromptEntityOptions("\nSelect the Project Boundary (Polyline): ");
+                    peo.SetRejectMessage("\nBoundary must be a Polyline!");
+                    peo.AddAllowedClass(typeof(Polyline), false);
+                    peo.AddAllowedClass(typeof(Polyline2d), false);
+                    peo.AddAllowedClass(typeof(Polyline3d), false);
+                    PromptEntityResult perBoundary = ed.GetEntity(peo);
+                    if (perBoundary.Status != PromptStatus.OK) return;
+
+                    Matrix3d ucs = ed.CurrentUserCoordinateSystem;
+                    CoordinateSystem3d cs = ucs.CoordinateSystem3d;
+
+                    Curve baseBoundaryCurve = tr.GetObject(perBoundary.ObjectId, OpenMode.ForRead) as Curve;
+                    if (baseBoundaryCurve == null) { ed.WriteMessage("\nFailed to load boundary."); return; }
+
+                    Region boundaryRegion = CreateFlatRegionFromCurve(baseBoundaryCurve, ed);
+                    if (boundaryRegion == null) { ed.WriteMessage("\nERROR: Failed to create boundary region."); return; }
+
+                    try
+                    {
+                        List<GridData> preValidGrids = GetValidGrids(tr, psrAllGrids, sideLength, ucs, ed);
+                        if (preValidGrids.Count == 0) return;
+
+                        double snapTol = sideLength * 0.5;
+                        preValidGrids = preValidGrids
+                            .OrderByDescending(g => Math.Round(g.SortY / snapTol) * snapTol)
+                            .ThenBy(g => g.SortX)
+                            .ToList();
+
+                        List<GridData> validGrids = new List<GridData>();
+                        try { Application.SetSystemVariable("NOMUTT", 1); } catch { }
+                        
+                        try 
+                        {
+                            for (int i = 0; i < preValidGrids.Count; i++)
+                            {
+                                GridData currentGrid = preValidGrids[i];
+                                Polyline pline = tr.GetObject(currentGrid.Id, OpenMode.ForRead) as Polyline;
+                                if (pline == null || pline.NumberOfVertices < 4) continue;
+
+                                currentGrid.LappingArea = CalculateOverlapArea(pline, boundaryRegion, ed);
+                                if (currentGrid.LappingArea <= MinOverlapArea) continue;
+
+                                Point3dCollection cellVerts = new Point3dCollection();
+                                for (int v = 0; v < pline.NumberOfVertices; v++)
+                                    cellVerts.Add(pline.GetPoint3dAt(v));
+
+                                int scrapedTotalIntersects = 0;
+                                double sideTol = sideLength * 0.15;
+
+                                for (int j = 0; j < 4; j++)
+                                {
+                                    Point3d pt1 = pline.GetPoint3dAt(j);
+                                    Point3d pt2 = pline.GetPoint3dAt((j + 1) % 4);
+                                    Point3d midPt = new Point3d((pt1.X + pt2.X) / 2, (pt1.Y + pt2.Y) / 2, 0);
+
+                                    Point3dCollection edgeCrossPts = new Point3dCollection();
+                                    edgeCrossPts.Add(new Point3d(midPt.X - sideTol, midPt.Y - sideTol, 0));
+                                    edgeCrossPts.Add(new Point3d(midPt.X + sideTol, midPt.Y - sideTol, 0));
+                                    edgeCrossPts.Add(new Point3d(midPt.X + sideTol, midPt.Y + sideTol, 0));
+                                    edgeCrossPts.Add(new Point3d(midPt.X - sideTol, midPt.Y + sideTol, 0));
+
+                                    TypedValue[] edgeFilterArray = new TypedValue[] {
+                                        new TypedValue((int)DxfCode.Start, "MTEXT")
+                                    };
+                                    SelectionFilter edgeSf = new SelectionFilter(edgeFilterArray);
+                                    PromptSelectionResult psrEdge = ed.SelectCrossingPolygon(edgeCrossPts, edgeSf);
+
+                                    if (psrEdge.Status == PromptStatus.OK)
+                                    {
+                                        foreach (SelectedObject so in psrEdge.Value)
+                                        {
+                                            MText mt = tr.GetObject(so.ObjectId, OpenMode.ForRead) as MText;
+                                            if (mt != null)
+                                            {
+                                                string rawText = Regex.Replace(mt.Contents, @"{\\.*?\\|.*?;|}", "");
+                                                int parsedVal = 0;
+                                                if (int.TryParse(rawText.Trim(), out parsedVal))
+                                                {
+                                                    scrapedTotalIntersects += parsedVal;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                currentGrid.TotalIntersects = scrapedTotalIntersects;
+
+                                string scrapedDir = "";
+                                TypedValue[] dirFilterArray = new TypedValue[] {
+                                    new TypedValue((int)DxfCode.Start, "MTEXT"),
+                                    new TypedValue((int)DxfCode.LayerName, "Grid_Outputs_DirText")
+                                };
+                                SelectionFilter dirSf = new SelectionFilter(dirFilterArray);
+                                PromptSelectionResult psrDir = ed.SelectCrossingPolygon(cellVerts, dirSf);
+
+                                if (psrDir.Status == PromptStatus.OK)
+                                {
+                                    string[] validDirs = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
+                                    foreach (SelectedObject so in psrDir.Value)
+                                    {
+                                        MText mt = tr.GetObject(so.ObjectId, OpenMode.ForRead) as MText;
+                                        if (mt != null)
+                                        {
+                                            string rawText = mt.Text.Trim().ToUpper();
+                                            if (validDirs.Contains(rawText))
+                                            {
+                                                scrapedDir = rawText;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                                currentGrid.Direction = scrapedDir;
+                                
+                                if (!string.IsNullOrEmpty(scrapedDir))
+                                {
+                                    currentGrid.DirectionVector = DirectionLabelToVector(scrapedDir);
+                                }
+
+                                currentGrid.SlopePercent = ((currentGrid.TotalIntersects * Math.PI * contourInterval)
+                                    / (8 * sideLength)) * 100;
+                                currentGrid.Classification = GetSlopeClassification(currentGrid.SlopePercent);
+
+                                validGrids.Add(currentGrid);
+                            }
+                        }
+                        finally { 
+                            try { Application.SetSystemVariable("NOMUTT", 0); } catch { } 
+                        }
+
+                        ExportToXLSX(doc, validGrids, sideLength, contourInterval);
+                        
+                        tr.Commit();
+                        ed.WriteMessage(string.Format("\nExport complete! Exported {0} grids to XLSX.", validGrids.Count));
                     }
                     finally
                     {

@@ -8,3 +8,5 @@ V5/
 skills-lock.json
 Gridtool.code-workspace
 implementation_plan.md
+bump_test_version.bat
+prepare_commit_version.bat
