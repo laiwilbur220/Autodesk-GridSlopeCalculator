@@ -21,7 +21,7 @@
 | `GridMethodSlopeCalculator_Edit/` | 開發者專用目錄，內含原始碼 (`.cs`)、編譯腳本 (`build.bat`) 與相關 API 組件 |
 | `UNBLOCK.bat` | 解除 Windows 安全鎖定（ZIP 下載後必須執行） |
 | `README.md` | 使用說明書 |
-| `DetailedExplaination_細節說明.md` | 細節說明書 |
+| `DetailedInfo_細節說明.md` | 相關細節說明 |
 
 ## 系統需求 (Prerequisites)
 
