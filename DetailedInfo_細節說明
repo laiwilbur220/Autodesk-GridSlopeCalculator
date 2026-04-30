@@ -1,10 +1,7 @@
-# AutoCAD Grid Method Slope Calculator
-**AutoCAD 「坵塊法」網格坡度與坡向計算工具**
+# AutoCAD Grid Method Slope Calculator_Detailed info
+**AutoCAD 「坵塊法」網格坡度與坡向計算工具_細節說明**
 
-A production-ready C# AutoCAD .NET plugin for rigorous topography slope analysis and True-North aspect calculations using the authoritative Grid Method.  
-本工具為 AutoCAD .NET 擴充功能，利用自動化「坵塊法」快速完成大範圍地形坡度運算、正北坡向分析，並一鍵產出完整統計報表與數據報表。
-
----
+--
 
 ###  關於坵塊法 (About the Grid Method)
 
