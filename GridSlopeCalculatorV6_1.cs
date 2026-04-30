@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
@@ -16,17 +16,18 @@ using Autodesk.AutoCAD.Runtime;
 namespace Civil3DGridMethod
 {
     /// <summary>
-    /// V5 Grid Slope Calculator ??Automated terrain slope analysis for AutoCAD Civil 3D.
+    /// V6 Grid Slope Calculator ??Automated terrain slope analysis for AutoCAD Civil 3D.
     /// Features:
     ///   ??Optional automatic grid generation aligned to UCS (25m or 10m cells)
     ///   ??Slope calculation via Horton grid method: S = n??h / 8L ? 100
     ///   ??Downhill aspect via least-squares plane fitting
+    ///   ??k-NN IDW direction interpolation for cells with < 3 contour intersections
     ///   ??Detailed outline direction arrows with center-point positioning
     ///   ??Transparent heatmap hatching by slope classification
     ///   ??NOD-based parameter persistence for update command
     ///   ??Native XLSX export with live Excel formulas
     /// </summary>
-    public class GridSlopeCalculatorV5
+    public class GridSlopeCalculatorV6
     {
         #region Constants
 
@@ -72,7 +73,7 @@ namespace Civil3DGridMethod
         private const int MaxLegendRowsPerChunk = 26;
 
         // NOD (Named Object Dictionary) key for persistent parameter storage
-        private const string NOD_KEY = "GridSlopeParams";
+        private const string NOD_KEY = "GridSlopeParamsV6";
 
         // Slope classification layers (class name, layer name, ACI color index)
         private static readonly string[] SlopeClassNames = { "\u4E00\u7D1A\u5761", "\u4E8C\u7D1A\u5761", "\u4E09\u7D1A\u5761", "\u56DB\u7D1A\u5761", "\u4E94\u7D1A\u5761", "\u516D\u7D1A\u5761", "\u4E03\u7D1A\u5761" };
@@ -127,10 +128,14 @@ namespace Civil3DGridMethod
             /// <summary>Compass direction label for the downhill aspect (e.g. "NE", "S").</summary>
             public string Direction { get; set; }
 
+            /// <summary>Raw unit direction vector for the downhill aspect (used for IDW interpolation).</summary>
+            public Vector3d DirectionVector { get; set; }
+
             public GridData()
             {
                 Classification = "";
                 Direction = "";
+                DirectionVector = Vector3d.XAxis;
             }
 
             /// <summary>Area of intersection between grid cell and project boundary (m蝪?.</summary>
@@ -151,10 +156,10 @@ namespace Civil3DGridMethod
         #region Main AutoCAD Command
 
         /// <summary>
-        /// Main entry point ??AutoCAD command: CalcGridSlopeCSV5
+        /// Main entry point ??AutoCAD command: CalcGridSlopeCSV6
         /// Workflow: grid existence check ??(optional grid generation) ??slope calculation ??output.
         /// </summary>
-        [CommandMethod("CalcGridSlopeCSV5")]
+        [CommandMethod("CalcGridSlopeCSV6")]
         public void CalculateGridSlope()
         {
             Document doc = Application.DocumentManager.MdiActiveDocument;
@@ -480,31 +485,42 @@ namespace Civil3DGridMethod
 
                             Vector3d slopeDir;
                             currentGrid.Direction = CalculateAspectAndDirection(finalGridPts, out slopeDir);
+                            currentGrid.DirectionVector = slopeDir;
                             currentGrid.TotalIntersects = finalGridPts.Count;
                             currentGrid.SlopePercent = ((currentGrid.TotalIntersects * Math.PI * contourInterval)
                                 / (8 * sideLength)) * 100;
                             currentGrid.Classification = GetSlopeClassification(currentGrid.SlopePercent);
 
+                            validGrids.Add(currentGrid);
+                        }
+
+                        // ===== INTERPOLATION PHASE: fill missing directions via k-NN IDW =====
+                        InterpolateMissingDirections(validGrids, sideLength, ed);
+
+                        // ===== LOOP 2: DRAWING (arrows, labels, hatches) =====
+                        for (int i = 0; i < validGrids.Count; i++)
+                        {
+                            GridData currentGrid = validGrids[i];
+
                             Point3d cUCS = currentGrid.CentroidUCS;
                             Point3d cWCS = currentGrid.CentroidWCS;
 
-                            // Draw direction arrow shifted upward
-                            Point3d arrowCenter = new Point3d(cWCS.X, cWCS.Y, 0)
-                                + new Vector3d(cs.Yaxis.X, cs.Yaxis.Y, 0) * (sideLength * ArrowUpwardShift);
+                            // Draw direction arrow at grid center
+                            Point3d arrowCenter = new Point3d(cWCS.X, cWCS.Y, 0);
                             if (!string.IsNullOrEmpty(currentGrid.Direction))
                             {
-                                DrawDirectionArrow(tr, btr, arrowCenter, slopeDir, sideLength, layerDirection);
+                                DrawDirectionArrow(tr, btr, arrowCenter, currentGrid.DirectionVector, sideLength, layerDirection);
                             }
 
                             // --- Per-cell annotation labels (all centered horizontally) ---
-                            int displayId = validGrids.Count + 1;
+                            int displayId = i + 1;
 
                             Point3d idPt = new Point3d(cUCS.X - (sideLength * IdOffsetRatio),
                                 cUCS.Y + (sideLength * IdOffsetRatio), 0).TransformBy(ucs);
                             AddTextToBTR(tr, btr, displayId.ToString(), idPt, textHeight,
                                 layerId, cs, AttachmentPoint.TopLeft);
 
-                            // Direction text ??top-center (swapped with area)
+                            // Direction text — top-center
                             if (!string.IsNullOrEmpty(currentGrid.Direction))
                             {
                                 Point3d dirTextPt = new Point3d(cUCS.X,
@@ -529,7 +545,7 @@ namespace Civil3DGridMethod
                             AddTextToBTR(tr, btr, string.Format("n={0}", currentGrid.TotalIntersects),
                                 nPt, textHeight * 0.8, layerTotal, cs, AttachmentPoint.MiddleCenter);
 
-                            // Overlap area ??bottom of cell (swapped with direction)
+                            // Overlap area — bottom of cell
                             {
                                 Point3d areaPt = new Point3d(cUCS.X,
                                     cUCS.Y - (sideLength * DirectionTextOffsetYRatio), 0).TransformBy(ucs);
@@ -537,8 +553,6 @@ namespace Civil3DGridMethod
                                 AddTextToBTR(tr, btr, areaText, areaPt, textHeight * 0.8,
                                     layerArea, cs, AttachmentPoint.BottomCenter);
                             }
-
-                            validGrids.Add(currentGrid);
 
                             // Create heatmap hatch for this grid cell
                             if (currentGrid.TotalIntersects >= 0)
@@ -576,23 +590,13 @@ namespace Civil3DGridMethod
                             : ((validGrids.Count - 1) / MaxSummaryRowsPerChunk) + 1;
                         double summaryTableWidth = mainChunks * 88.0;
 
-                        Point3d legendInsertPt = tableInsertPtWCS + (cs.Xaxis * (summaryTableWidth + 40.0));
-                        GenerateLegendTable(tr, btr, db, cs, legendInsertPt, layerTable,
-                            contourInterval, sideLength);
-
-                        double legendChunkWidth = 16.0 + 15.0 + 18.0;
-                        int legendChunks = ((51 - 1) / MaxLegendRowsPerChunk) + 1;
-                        double legendTotalWidth = legendChunks * legendChunkWidth;
-                        Point3d compassCenterPt = legendInsertPt
-                            + (cs.Xaxis * (legendTotalWidth + 20.0 + (sideLength * 1.5)))
-                            - (cs.Yaxis * (sideLength * 2.0));
-
-                        DrawCompassLegend(tr, btr, cs, ucs, compassCenterPt, sideLength,
-                            layerEdges, layerDirection, layerDirText);
+                        // Statistical summary table (slope classification + direction distribution)
+                        Point3d statTablePt = tableInsertPtWCS + (cs.Xaxis * (summaryTableWidth + 20.0));
+                        GenerateStatisticalTable(tr, btr, db, cs, validGrids, statTablePt, layerTable);
 
                         if (shouldExportXlsx) ExportToXLSX(doc, validGrids, sideLength, contourInterval);
 
-                        // Save params to NOD for UpdateGridSlopeCSV5
+                        // Save params to NOD for UpdateGridSlopeCSV6
                         SaveParamsToNOD(db, tr, sideLength, contourInterval, summaryTableId);
 
                         tr.Commit();
@@ -1013,6 +1017,54 @@ namespace Civil3DGridMethod
         }
 
         /// <summary>
+        /// Maps a raw 2D direction vector to the nearest 8-point compass label and standardized unit vector.
+        /// Returns empty string if the input vector has near-zero length.
+        /// </summary>
+        private string GetCompassFromVector(Vector3d rawDir, out Vector3d standardDir)
+        {
+            standardDir = Vector3d.XAxis;
+            double len = rawDir.Length;
+            if (len < SingularityThreshold) return "";
+
+            Vector3d normDir = rawDir.GetNormal();
+            double angle = Math.Atan2(normDir.Y, normDir.X);
+            double deg = angle * 180.0 / Math.PI;
+            if (deg < 0) deg += 360.0;
+
+            if (deg >= 337.5 || deg < 22.5)  { standardDir = new Vector3d(1, 0, 0); return "E"; }
+            if (deg >= 22.5  && deg < 67.5)  { standardDir = new Vector3d(1, 1, 0).GetNormal(); return "NE"; }
+            if (deg >= 67.5  && deg < 112.5) { standardDir = new Vector3d(0, 1, 0); return "N"; }
+            if (deg >= 112.5 && deg < 157.5) { standardDir = new Vector3d(-1, 1, 0).GetNormal(); return "NW"; }
+            if (deg >= 157.5 && deg < 202.5) { standardDir = new Vector3d(-1, 0, 0); return "W"; }
+            if (deg >= 202.5 && deg < 247.5) { standardDir = new Vector3d(-1, -1, 0).GetNormal(); return "SW"; }
+            if (deg >= 247.5 && deg < 292.5) { standardDir = new Vector3d(0, -1, 0); return "S"; }
+            if (deg >= 292.5 && deg < 337.5) { standardDir = new Vector3d(1, -1, 0).GetNormal(); return "SE"; }
+
+            return "";
+        }
+
+        /// <summary>
+        /// Converts a compass direction label (e.g. "NE", "S") to its corresponding unit vector.
+        /// This is the inverse of GetCompassFromVector. Used by UpdateGridSlopeCSV5 to rebuild
+        /// arrow geometry from scraped direction text.
+        /// </summary>
+        private Vector3d DirectionLabelToVector(string label)
+        {
+            switch (label.ToUpper())
+            {
+                case "E":  return new Vector3d(1, 0, 0);
+                case "NE": return new Vector3d(1, 1, 0).GetNormal();
+                case "N":  return new Vector3d(0, 1, 0);
+                case "NW": return new Vector3d(-1, 1, 0).GetNormal();
+                case "W":  return new Vector3d(-1, 0, 0);
+                case "SW": return new Vector3d(-1, -1, 0).GetNormal();
+                case "S":  return new Vector3d(0, -1, 0);
+                case "SE": return new Vector3d(1, -1, 0).GetNormal();
+                default:   return Vector3d.XAxis;
+            }
+        }
+
+        /// <summary>
         /// Determines downhill direction via least-squares plane fit: z = a(x???) + b(y??? + z?.
         /// Returns the compass label (N/NE/E/SE/S/SW/W/NW) and the unit direction vector.
         /// Requires at least 3 points with elevation variation.
@@ -1055,21 +1107,78 @@ namespace Civil3DGridMethod
             if (Math.Abs(a) < SingularityThreshold && Math.Abs(b) < SingularityThreshold) return "";
 
             Vector3d rawDir = new Vector3d(-a, -b, 0).GetNormal();
-            double angle = Math.Atan2(rawDir.Y, rawDir.X);
-            double deg = angle * 180.0 / Math.PI;
+            return GetCompassFromVector(rawDir, out direction);
+        }
 
-            if (deg < 0) deg += 360.0;
+        /// <summary>
+        /// Interpolates missing directions for grid cells that had fewer than 3 contour intersections.
+        /// Uses K-Nearest Neighbors (k=8) with Inverse Distance Weighting (IDW, w = 1/d^2).
+        /// </summary>
+        private void InterpolateMissingDirections(List<GridData> grids, double sideLength, Editor ed)
+        {
+            const int K = 8; // number of nearest neighbors to consider
 
-            if (deg >= 337.5 || deg < 22.5)  { direction = new Vector3d(1, 0, 0); return "E"; }
-            if (deg >= 22.5  && deg < 67.5)  { direction = new Vector3d(1, 1, 0).GetNormal(); return "NE"; }
-            if (deg >= 67.5  && deg < 112.5) { direction = new Vector3d(0, 1, 0); return "N"; }
-            if (deg >= 112.5 && deg < 157.5) { direction = new Vector3d(-1, 1, 0).GetNormal(); return "NW"; }
-            if (deg >= 157.5 && deg < 202.5) { direction = new Vector3d(-1, 0, 0); return "W"; }
-            if (deg >= 202.5 && deg < 247.5) { direction = new Vector3d(-1, -1, 0).GetNormal(); return "SW"; }
-            if (deg >= 247.5 && deg < 292.5) { direction = new Vector3d(0, -1, 0); return "S"; }
-            if (deg >= 292.5 && deg < 337.5) { direction = new Vector3d(1, -1, 0).GetNormal(); return "SE"; }
+            // Collect all grids with a valid contour-based direction
+            List<GridData> validDirGrids = new List<GridData>();
+            List<GridData> missingDirGrids = new List<GridData>();
 
-            return "";
+            foreach (GridData g in grids)
+            {
+                if (!string.IsNullOrEmpty(g.Direction))
+                    validDirGrids.Add(g);
+                else
+                    missingDirGrids.Add(g);
+            }
+
+            if (validDirGrids.Count == 0 || missingDirGrids.Count == 0) return;
+
+            ed.WriteMessage(string.Format(
+                "\nInterpolating direction for {0} grid(s) from {1} valid neighbor(s)...",
+                missingDirGrids.Count, validDirGrids.Count));
+
+            foreach (GridData target in missingDirGrids)
+            {
+                // Calculate distances to all valid cells
+                List<KeyValuePair<double, GridData>> distPairs = new List<KeyValuePair<double, GridData>>();
+                foreach (GridData neighbor in validDirGrids)
+                {
+                    double dx = target.CentroidWCS.X - neighbor.CentroidWCS.X;
+                    double dy = target.CentroidWCS.Y - neighbor.CentroidWCS.Y;
+                    double dist = Math.Sqrt(dx * dx + dy * dy);
+                    if (dist > 0) // skip self (shouldn't happen, but safety)
+                        distPairs.Add(new KeyValuePair<double, GridData>(dist, neighbor));
+                }
+
+                if (distPairs.Count == 0) continue;
+
+                // Sort by distance and take the K closest
+                distPairs.Sort((a, b) => a.Key.CompareTo(b.Key));
+                int take = Math.Min(K, distPairs.Count);
+
+                // Compute IDW weighted average vector
+                double weightedX = 0, weightedY = 0, totalWeight = 0;
+                for (int i = 0; i < take; i++)
+                {
+                    double d = distPairs[i].Key;
+                    double w = 1.0 / (d * d);
+                    Vector3d v = distPairs[i].Value.DirectionVector;
+                    weightedX += w * v.X;
+                    weightedY += w * v.Y;
+                    totalWeight += w;
+                }
+
+                if (totalWeight < SingularityThreshold) continue;
+
+                Vector3d avgDir = new Vector3d(weightedX / totalWeight, weightedY / totalWeight, 0);
+                Vector3d stdDir;
+                string label = GetCompassFromVector(avgDir, out stdDir);
+
+                if (!string.IsNullOrEmpty(label))
+                {
+                    target.Direction = label;
+                    target.DirectionVector = stdDir;
+                }
+            }
         }
 
         /// <summary>
@@ -1103,6 +1212,182 @@ namespace Civil3DGridMethod
             if (dirGroups.Any()) result.ModeDirection = dirGroups.First().Direction;
 
             return result;
+        }
+
+        /// <summary>
+        /// Generates a statistical summary AutoCAD Table matching the XLSX output format.
+        /// Contains two sub-tables: slope classification summary and direction distribution.
+        /// </summary>
+        private void GenerateStatisticalTable(Transaction tr, BlockTableRecord btr, Database db,
+            CoordinateSystem3d cs, List<GridData> validGrids, Point3d insertPt, ObjectId layerTable)
+        {
+            // ===== Compute statistics =====
+            double totalArea = validGrids.Sum(g => g.LappingArea);
+            int totalCount = validGrids.Count;
+
+            // Slope classification stats
+            int[] slopeClassCounts = new int[7];
+            double[] slopeClassAreas = new double[7];
+            for (int i = 0; i < validGrids.Count; i++)
+            {
+                int idx = GetSlopeClassIndex(validGrids[i].SlopePercent);
+                slopeClassCounts[idx]++;
+                slopeClassAreas[idx] += validGrids[i].LappingArea;
+            }
+
+            // Direction stats
+            int[] dirCounts = new int[8];
+            double[] dirAreas = new double[8];
+            for (int i = 0; i < validGrids.Count; i++)
+            {
+                for (int d = 0; d < 8; d++)
+                {
+                    if (validGrids[i].Direction == DirKeys[d])
+                    {
+                        dirCounts[d]++;
+                        dirAreas[d] += validGrids[i].LappingArea;
+                        break;
+                    }
+                }
+            }
+
+            WeightedSummary summary = ComputeWeightedSummary(validGrids);
+
+            // Find dominant direction label
+            string dominantDir = "";
+            if (!string.IsNullOrEmpty(summary.ModeDirection))
+            {
+                for (int d = 0; d < 8; d++)
+                {
+                    if (DirKeys[d] == summary.ModeDirection)
+                    {
+                        dominantDir = DirLabels[d];
+                        break;
+                    }
+                }
+            }
+
+            // ===== Table 1: Slope Classification (10 rows x 5 cols) =====
+            // Row 0: Header, Rows 1-7: Classes, Row 8: Totals, Row 9: Average slope
+            int t1Rows = 10;
+            int t1Cols = 5;
+
+            Table tb1 = new Table();
+            tb1.TableStyle = db.Tablestyle;
+            tb1.LayerId = layerTable;
+            tb1.Position = insertPt;
+            tb1.Normal = cs.Zaxis;
+            tb1.Direction = cs.Xaxis;
+            tb1.SetSize(t1Rows, t1Cols);
+
+            // Column widths
+            double[] t1Widths = { 14.0, 18.0, 10.0, 16.0, 14.0 };
+            for (int c = 0; c < t1Cols; c++)
+                tb1.Columns[c].Width = t1Widths[c];
+            for (int r = 0; r < t1Rows; r++)
+            {
+                tb1.Rows[r].Height = 6.0;
+                for (int c = 0; c < t1Cols; c++)
+                {
+                    tb1.Cells[r, c].TextHeight = 2.5;
+                    tb1.Cells[r, c].Alignment = CellAlignment.MiddleCenter;
+                }
+            }
+
+            // Headers
+            string[] t1Headers = { "\u5761\u5EA6\u7D1A\u5225", "\u5761\u5EA6\u7BC4\u570DS(%)", "\u65B9\u683C\u6578", "\u9762\u7A4D(m2)", "\u767E\u5206\u6BD4(%)" };
+            for (int c = 0; c < t1Cols; c++)
+                tb1.Cells[0, c].TextString = t1Headers[c];
+
+            // Data rows
+            for (int i = 0; i < 7; i++)
+            {
+                tb1.Cells[i + 1, 0].TextString = SlopeClassNames[i];
+                tb1.Cells[i + 1, 1].TextString = SlopeClassRanges[i];
+                tb1.Cells[i + 1, 2].TextString = slopeClassCounts[i].ToString();
+                tb1.Cells[i + 1, 3].TextString = string.Format("{0:F2}", slopeClassAreas[i]);
+                tb1.Cells[i + 1, 4].TextString = totalArea > 0
+                    ? string.Format("{0:F2}", slopeClassAreas[i] / totalArea * 100) : "0.00";
+            }
+
+            // Totals row
+            tb1.Cells[8, 0].TextString = "\u5408\u3000\u8A08";
+            tb1.Cells[8, 2].TextString = totalCount.ToString();
+            tb1.Cells[8, 3].TextString = string.Format("{0:F2}", totalArea);
+            tb1.Cells[8, 4].TextString = "100.00";
+
+            // Average slope row
+            tb1.Cells[9, 0].TextString = "\u5E73\u5747\u5761\u5EA6(%)";
+            tb1.Cells[9, 2].TextString = string.Format("{0:F2}", summary.MeanSlope);
+
+            btr.AppendEntity(tb1);
+            tr.AddNewlyCreatedDBObject(tb1, true);
+
+            // ===== Table 2: Direction Distribution (12 rows x 5 cols) =====
+            // Row 0: Header, Rows 1-8: Directions, Row 9: blank spacer, Row 10: Totals, Row 11: Dominant direction
+            int t2Rows = 12;
+            int t2Cols = 5;
+
+            // Position table 2 below table 1 with some spacing
+            double t1Height = t1Rows * 6.0;
+            Point3d t2InsertPt = insertPt - (cs.Yaxis * (t1Height + 10.0));
+
+            Table tb2 = new Table();
+            tb2.TableStyle = db.Tablestyle;
+            tb2.LayerId = layerTable;
+            tb2.Position = t2InsertPt;
+            tb2.Normal = cs.Zaxis;
+            tb2.Direction = cs.Xaxis;
+            tb2.SetSize(t2Rows, t2Cols);
+
+            double[] t2Widths = { 12.0, 16.0, 10.0, 16.0, 14.0 };
+            for (int c = 0; c < t2Cols; c++)
+                tb2.Columns[c].Width = t2Widths[c];
+            for (int r = 0; r < t2Rows; r++)
+            {
+                tb2.Rows[r].Height = 6.0;
+                for (int c = 0; c < t2Cols; c++)
+                {
+                    tb2.Cells[r, c].TextHeight = 2.5;
+                    tb2.Cells[r, c].Alignment = CellAlignment.MiddleCenter;
+                }
+            }
+
+            // Headers
+            string[] t2Headers = { "\u5761\u5411\u7D1A\u5E8F", "\u5761\u5411\u5225", "\u65B9\u683C\u6578", "\u9762\u7A4D(m2)", "\u767E\u5206\u6BD4(%)" };
+            for (int c = 0; c < t2Cols; c++)
+                tb2.Cells[0, c].TextString = t2Headers[c];
+
+            // Data rows
+            for (int i = 0; i < 8; i++)
+            {
+                tb2.Cells[i + 1, 0].TextString = (i + 1).ToString();
+                tb2.Cells[i + 1, 1].TextString = DirLabels[i];
+                tb2.Cells[i + 1, 2].TextString = dirCounts[i].ToString();
+                tb2.Cells[i + 1, 3].TextString = string.Format("{0:F2}", dirAreas[i]);
+                tb2.Cells[i + 1, 4].TextString = totalArea > 0
+                    ? string.Format("{0:F2}", dirAreas[i] / totalArea * 100) : "0.00";
+            }
+
+            // Spacer row 9 is left empty
+
+            // Totals row
+            int dirTotalCount = 0;
+            for (int d = 0; d < 8; d++) dirTotalCount += dirCounts[d];
+            double dirTotalArea = 0;
+            for (int d = 0; d < 8; d++) dirTotalArea += dirAreas[d];
+
+            tb2.Cells[10, 0].TextString = "\u5408\u3000\u8A08";
+            tb2.Cells[10, 2].TextString = dirTotalCount.ToString();
+            tb2.Cells[10, 3].TextString = string.Format("{0:F2}", dirTotalArea);
+            tb2.Cells[10, 4].TextString = "100.00";
+
+            // Dominant direction row
+            tb2.Cells[11, 0].TextString = "\u5E73\u5747\u5761\u5411";
+            tb2.Cells[11, 3].TextString = dominantDir;
+
+            btr.AppendEntity(tb2);
+            tr.AddNewlyCreatedDBObject(tb2, true);
         }
 
         #endregion
@@ -1582,7 +1867,7 @@ namespace Civil3DGridMethod
         /// Spatial update command: re-syncs existing MText + Hatch inside each grid cell
         /// after contour edits, using Editor.SelectCrossingPolygon.
         /// </summary>
-        [CommandMethod("UpdateGridSlopeCSV5")]
+        [CommandMethod("UpdateGridSlopeCSV6")]
         public void UpdateGridSlope()
         {
             Document doc = Application.DocumentManager.MdiActiveDocument;
@@ -1597,7 +1882,7 @@ namespace Civil3DGridMethod
                     ObjectId tableId = ObjectId.Null;
                     if (!LoadParamsFromNOD(db, tr, out sideLength, out contourInterval, out tableId))
                     {
-                        ed.WriteMessage("\nNo saved parameters found. Run CalcGridSlopeCSV5 first.");
+                        ed.WriteMessage("\nNo saved parameters found. Run CalcGridSlopeCSV6 first.");
                         return;
                     }
                     ed.WriteMessage(string.Format("\nLoaded from NOD: L={0}, ?h={1}", sideLength, contourInterval));
@@ -1717,10 +2002,11 @@ namespace Civil3DGridMethod
                             
                             currentGrid.TotalIntersects = scrapedTotalIntersects;
 
-                            // 2. Scrape Direction Override
+                            // 2. Scrape Direction Override — filter by layer for reliability
                             string scrapedDir = "";
                             TypedValue[] dirFilterArray = new TypedValue[] {
-                                new TypedValue((int)DxfCode.Start, "MTEXT")
+                                new TypedValue((int)DxfCode.Start, "MTEXT"),
+                                new TypedValue((int)DxfCode.LayerName, "Grid_Outputs_DirText")
                             };
                             SelectionFilter dirSf = new SelectionFilter(dirFilterArray);
                             PromptSelectionResult psrDir = ed.SelectCrossingPolygon(cellVerts, dirSf);
@@ -1733,7 +2019,8 @@ namespace Civil3DGridMethod
                                     MText mt = tr.GetObject(so.ObjectId, OpenMode.ForRead) as MText;
                                     if (mt != null)
                                     {
-                                        string rawText = Regex.Replace(mt.Contents, @"{\\.*?\\|.*?;|}", "").Trim().ToUpper();
+                                        // Use .Text (unformatted) instead of regex on .Contents
+                                        string rawText = mt.Text.Trim().ToUpper();
                                         if (validDirs.Contains(rawText))
                                         {
                                             scrapedDir = rawText;
@@ -1743,6 +2030,13 @@ namespace Civil3DGridMethod
                                 }
                             }
                             currentGrid.Direction = scrapedDir;
+
+                            // Convert scraped direction to a vector for arrow drawing
+                            if (!string.IsNullOrEmpty(scrapedDir))
+                            {
+                                Vector3d dirVec = DirectionLabelToVector(scrapedDir);
+                                currentGrid.DirectionVector = dirVec;
+                            }
                             currentGrid.SlopePercent = ((currentGrid.TotalIntersects * Math.PI * contourInterval)
                                 / (8 * sideLength)) * 100;
                             currentGrid.Classification = GetSlopeClassification(currentGrid.SlopePercent);
@@ -1782,7 +2076,7 @@ namespace Civil3DGridMethod
                                         // Normalize overwritten direction string formatting natively 
                                         else
                                         {
-                                            string rawMtDir = Regex.Replace(contents, @"{\\.*?\\|.*?;|}", "").Trim().ToUpper();
+                                            string rawMtDir = mt.Text.Trim().ToUpper();
                                             string[] vDirs = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
                                             if (vDirs.Contains(rawMtDir))
                                             {
@@ -1839,6 +2133,34 @@ namespace Civil3DGridMethod
                                 }
                                 catch { }
                             }
+
+                            // Erase existing direction arrow polylines inside cell and redraw
+                            try
+                            {
+                                ObjectId layerDirection = GetOrCreateLayer(db, tr, "Grid_Outputs_Direction", 4);
+                                TypedValue[] arrowFilter = new TypedValue[] {
+                                    new TypedValue((int)DxfCode.Start, "LWPOLYLINE"),
+                                    new TypedValue((int)DxfCode.LayerName, "Grid_Outputs_Direction")
+                                };
+                                PromptSelectionResult psrArrow = ed.SelectCrossingPolygon(cellVerts,
+                                    new SelectionFilter(arrowFilter));
+                                if (psrArrow.Status == PromptStatus.OK)
+                                {
+                                    foreach (SelectedObject so in psrArrow.Value)
+                                    {
+                                        Entity ent = tr.GetObject(so.ObjectId, OpenMode.ForWrite) as Entity;
+                                        if (ent != null) ent.Erase();
+                                    }
+                                }
+
+                                // Draw new arrow at grid center based on scraped direction
+                                if (!string.IsNullOrEmpty(currentGrid.Direction))
+                                {
+                                    Point3d arrowCenter = new Point3d(currentGrid.CentroidWCS.X, currentGrid.CentroidWCS.Y, 0);
+                                    DrawDirectionArrow(tr, btr, arrowCenter, currentGrid.DirectionVector, sideLength, layerDirection);
+                                }
+                            }
+                            catch { }
 
                             validGrids.Add(currentGrid);
                         }

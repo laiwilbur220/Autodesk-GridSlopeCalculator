@@ -1,8 +1,8 @@
 # AutoCAD Grid Method Slope Calculator
-**AutoCAD 「坵塊法」網格坡度與坡向計算工具 (V5)**
+**AutoCAD 「坵塊法」網格坡度與坡向計算工具 (V6)**
 
-A production-ready C# AutoCAD .NET plugin for rigorous topography slope analysis and True-North aspect calculations using the authoritative Grid Method — now with **DOM-based manual override scraping**, **table auto-replacement**, and **native XLSX exports**.  
-本工具為 AutoCAD .NET 擴充功能，利用自動化「坵塊法」快速完成大範圍地形坡度運算、正北坡向分析，並一鍵產出完整圖例與數據報表。V5 版新增**手動編輯數值同步**與**原生 Excel XLSX 無套件匯出**功能。
+A production-ready C# AutoCAD .NET plugin for rigorous topography slope analysis and True-North aspect calculations using the authoritative Grid Method — featuring **k-NN IDW direction interpolation**, **DOM-based manual override scraping**, **arrow auto-correction on update**, and **native XLSX exports**.  
+本工具為 AutoCAD .NET 擴充功能，利用自動化「坵塊法」快速完成大範圍地形坡度運算、正北坡向分析，並一鍵產出完整統計報表與數據報表。V6 版新增 **k-NN IDW 方向內插**、**箭頭自動校正**與**統計摘要表**功能。
 
 ---
 
@@ -32,15 +32,15 @@ A production-ready C# AutoCAD .NET plugin for rigorous topography slope analysis
 ### 🚀 安裝與執行 (Install & Run)
 
 **1. 載入 (Load Plugin)**  
-開啟 DWG 地形圖。在 AutoCAD 輸入指令 `NETLOAD`，並選取 `GridSlopeCalculatorV5.dll` 檔案。  
-*In AutoCAD, use `NETLOAD` and select the `GridSlopeCalculatorV5.dll` file.*
+開啟 DWG 地形圖。在 AutoCAD 輸入指令 `NETLOAD`，並選取 `GridSlopeCalculatorV6_1.dll` 檔案。  
+*In AutoCAD, use `NETLOAD` and select the `GridSlopeCalculatorV6_1.dll` file.*
 
 **2. 執行 (Execute Command)**  
 在 AutoCAD 命令列輸入：  
 *Type the commands:*
 ```text
-CalcGridSlopeCSV5
-UpdateGridSlopeCSV5
+CalcGridSlopeCSV6
+UpdateGridSlopeCSV6
 ```
 
 ---
@@ -48,7 +48,7 @@ UpdateGridSlopeCSV5
 ### 💻 使用流程 (Usage Workflow)
 
 ```
-CalcGridSlopeCSV5
+CalcGridSlopeCSV6
 │
 ├─ 「方格是否已建立？」 Has grid already been built? [Y/N]
 │
@@ -69,16 +69,22 @@ CalcGridSlopeCSV5
 ├─ 確認計畫範圍 (Confirm boundary)
 ├─ 指定報表插入點 (Pick table insertion point)
 │
-└─ 計算完成 (Process) → 產生結果與無套件 XLSX (Results & XLSX)
+└─ 計算完成 (Process):
+    ├─ 計算坡度與方向 (Calculate slope & direction)
+    ├─ k-NN IDW 方向內插 (Interpolate missing directions)
+    ├─ 繪製標註與箭頭 (Draw annotations & arrows)
+    ├─ 產生統計摘要表 (Generate statistical summary tables)
+    └─ 匯出 XLSX (Export to XLSX)
 ```
 
 **更新流程 (Update Workflow):**
 若使用者在圖面上**手動修改了交點數或坡向文字** (Manual Edits)：
-1. 執行 `UpdateGridSlopeCSV5`
-2. 系統讀取 NOD 暫存數據，掃描方格內的使用者文字 (DOM Scraping)
-3. 自動消除警告 (NOMUTT) 並重新產生坡度網底 (Hatch)
-4. 問答 `Regenerate Summary Table? [Y/N]`，若選擇 `Y` 則自動在原地覆蓋新表格
-5. 自動遞增檔名 (Increment filename) 防止 Excel 檔案鎖死，並輸出新 XLSX
+1. 執行 `UpdateGridSlopeCSV6`
+2. 系統讀取 NOD 暫存數據，掃描方格內的使用者文字 (DOM Scraping by Layer)
+3. 自動偵測方向文字變更並重繪對應箭頭 (Arrow auto-correction)
+4. 自動消除警告 (NOMUTT) 並重新產生坡度網底 (Hatch)
+5. 問答 `Regenerate Summary Table? [Y/N]`，若選擇 `Y` 則自動在原地覆蓋新表格
+6. 自動遞增檔名 (Increment filename) 防止 Excel 檔案鎖死，並輸出新 XLSX
 
 ---
 
@@ -86,26 +92,48 @@ CalcGridSlopeCSV5
 
 * **網格視覺標示 (Visual Grid Markers):**  
   每格網格內標示方向 (top)、坡度 (%)、級別分類、交點數 n= 及面積 A (bottom)。  
-  使用精緻的 37 頂點輪廓箭頭標示下坡方向，箭頭以中心點定位。
+  使用精緻的 37 頂點輪廓箭頭標示下坡方向，箭頭置於方格正中心。
 
-* **分析總表與圖例 (Native AutoCAD Tables):**  
-  自動產出所有網格的彙整成果表、0~100% 級別參考圖例，以及具備視覺防呆功能的動態 3×3 指南針 (Compass Legend)。更新時支援透過 ObjectID 追蹤，原地自動替換舊表。
+* **方向內插 (Direction Interpolation):**  
+  等高線交點不足 3 個的方格，自動以 k-NN (k=8) 反距離權重法 (IDW, w=1/d²) 從最近的有效鄰居方格內插方向。適用於大面積平坦地形 (如 20 公頃、平均坡度 2% 的平台)。  
+  *Grid cells with < 3 contour intersections automatically receive an interpolated direction from the 8 nearest valid neighbors via Inverse Distance Weighting.*
+
+* **統計摘要表 (Statistical Summary Tables):**  
+  自動產出兩張 AutoCAD 原生表格：  
+  1. **坡度分級統計** — 七級坡分類的方格數、面積與百分比，含合計與加權平均坡度。  
+  2. **坡向分佈統計** — 八方位的方格數、面積與百分比，含合計與主要坡向。
+
+* **分析總表 (Grid Data Summary Table):**  
+  每格網格的 ID、交點數、坡度、分級、方向、面積彙整表。更新時支援透過 ObjectID 追蹤，原地自動替換舊表。
 
 * **原生 XLSX 匯出 (Native XLSX Data Export):**  
-  不再使用 CSV，改用 `System.IO.Packaging` 零套件直接生成 OpenXML `(.xlsx)`。不僅支援中文，且直接在 Excel 中夾帶動態公式，每次開啟即自動重新計算 (FullCalcOnLoad)！
+  使用 `System.IO.Packaging` 零套件直接生成 OpenXML `(.xlsx)`。支援中文，且直接在 Excel 中夾帶動態公式，每次開啟即自動重新計算 (FullCalcOnLoad)。
 
 ---
 
-### 🛠️ 開發與編譯 (Development & Compile - Optional)
+### 🆕 V6 新增功能 (What's New in V6)
 
-若是修改了 `.cs` 原始碼，請執行 `buildV5.bat`，系統會自動編譯更新 DLL。  
-*If you edit the source code, run `buildV5.bat` to recompile the plugin automatically.*
+| Feature | Description |
+|---------|-------------|
+| **k-NN IDW 方向內插** | 等高線不足的方格自動從 8 個最近有效鄰居內插方向 |
+| **箭頭置中** | 方向箭頭改為方格正中心，取代舊版上偏位置 |
+| **箭頭自動校正** | `UpdateGridSlopeCSV6` 偵測方向文字變更後自動刪除舊箭頭並重繪 |
+| **Layer-based 方向抓取** | 更新指令改用圖層篩選 (`Grid_Outputs_DirText`) 提升文字識別可靠性 |
+| **統計摘要表** | 新增坡度分級 + 坡向分佈兩張 AutoCAD 表格，取代舊版圖例與指南針 |
+| **獨立 NOD Key** | V6 使用 `GridSlopeParamsV6`，與 V5 資料互不干擾 |
+
+---
+
+### 🛠️ 開發與編譯 (Development & Compile)
+
+若是修改了 `.cs` 原始碼，請執行 `buildV6.bat`，系統會自動編譯更新 DLL。  
+*If you edit the source code, run `buildV6.bat` to recompile the plugin automatically.*
 
 ```text
-> buildV5.bat
-Compiling Civil 3D Grid Slope Tool V5...
-SUCCESS: GridSlopeCalculatorV5.dll created.
-AutoCAD commands: CalcGridSlopeCSV5, UpdateGridSlopeCSV5
+> buildV6.bat
+Compiling Civil 3D Grid Slope Tool V6_1...
+SUCCESS: GridSlopeCalculatorV6_1.dll created.
+AutoCAD commands: CalcGridSlopeCSV6, UpdateGridSlopeCSV6
 ```
 
 ---
@@ -114,9 +142,14 @@ AutoCAD commands: CalcGridSlopeCSV5, UpdateGridSlopeCSV5
 
 | File | Purpose |
 |------|---------|
-| `GridSlopeCalculatorV5.cs` | V5 主程式原始碼 (Main source code) |
-| `buildV5.bat` | 編譯腳本 (Build script) |
+| `GridSlopeCalculatorV6_1.cs` | V6 主程式原始碼 (Main source code — latest) |
+| `buildV6.bat` | V6 編譯腳本 (Build script) |
+| `GridSlopeCalculatorV6_1.dll` | 編譯輸出 (Compiled plugin) |
+| `V5/GridSlopeCalculatorV5.cs` | V5 存檔 (Archived V5 source) |
 | `acmgd.dll` / `acdbmgd.dll` / `accoremgd.dll` | AutoCAD .NET API 參考組件 |
+
+**版本命名規則 (Version Naming):**  
+`V6_1` → `V6_2` → `V6_3` ... 每次功能迭代遞增子版本號。
 
 ---
 
