@@ -19,6 +19,7 @@
 |---------------|------|
 | `GridMethodSlopeCalculator.dll` | 供一般使用者直接載入 AutoCAD 的編譯完成檔 |
 | `GridMethodSlopeCalculator_Edit/` | 開發者專用目錄，內含原始碼 (`.cs`)、編譯腳本 (`build.bat`) 與相關 API 組件 |
+| `UNBLOCK.bat` | 解除 Windows 安全鎖定（ZIP 下載後必須執行） |
 | `README.md` | 使用說明書 |
 
 ## 系統需求 (Prerequisites)
@@ -37,6 +38,11 @@
 ## 快速開始 (Getting Started)
 
 ### 載入外掛套件
+
+> [!WARNING]
+> **從 GitHub 下載 ZIP 的使用者請注意：** Windows 會自動封鎖從網路下載的 DLL 檔案，導致 AutoCAD `NETLOAD` 失敗（錯誤代碼 `0x80131515`）。  
+> 請在載入前先雙擊執行 **`UNBLOCK.bat`** 以解除鎖定。  
+> 若使用 `git clone` 方式取得專案則不受此影響。
 
 1. 開啟 AutoCAD 並載入您的 DWG 地形圖及計畫範圍(可視情況選擇是否預先建立網格)。
 2. 在命令列輸入 `NETLOAD`。
