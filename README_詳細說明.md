@@ -1,5 +1,5 @@
 # AutoCAD Grid Method Slope Calculator
-**AutoCAD 「坵塊法」網格坡度與坡向計算工具 (V6)**
+**AutoCAD 「坵塊法」網格坡度與坡向計算工具**
 
 A production-ready C# AutoCAD .NET plugin for rigorous topography slope analysis and True-North aspect calculations using the authoritative Grid Method.  
 本工具為 AutoCAD .NET 擴充功能，利用自動化「坵塊法」快速完成大範圍地形坡度運算、正北坡向分析，並一鍵產出完整統計報表與數據報表。
@@ -29,70 +29,6 @@ A production-ready C# AutoCAD .NET plugin for rigorous topography slope analysis
 
 ---
 
-###  安裝與執行 (Install & Run)
-
-**1. 載入 (Load Plugin)**  
-開啟 DWG 地形圖。在 AutoCAD 輸入指令 `NETLOAD`，並選取 `GridMethodSlopeCalculator.dll` 檔案。  
-*In AutoCAD, use `NETLOAD` and select the `GridMethodSlopeCalculator.dll` file.*
-
-**2. 執行 (Execute Command)**  
-在 AutoCAD 命令列輸入：  
-*Type the commands:*
-```text
-GM1_Calc
-GM2_Update
-GM3_Export
-```
-
----
-
-###  使用流程 (Usage Workflow)
-
-```
-GM1_Calc
-│
-├─ 「方格是否已建立？」 Has grid already been built? [Y/N]
-│
-├─ [N] ── 自動產生方格 (Auto Grid Generation)
-│   ├─ 1. 選擇計畫範圍 (Select project boundary)
-│   ├─ 2. 確認範圍選取 (Confirm boundary — highlight + Y/N)
-│   ├─ 3. 選擇方格尺寸 [25m / 10m] (default 25m)
-│   └─ 4. 自動建立 UCS 對齊方格，最佳化偏移防止邊界重疊
-│        → "Generated 42 grid cells (25m) on layer [GRID]"
-│
-├─ [Y] ── 輸入方格邊長 L (Enter grid side length)
-│
-├─ 輸入等高線間距 Δh (Enter contour interval)
-├─ 是否匯出 XLSX？ (Export to XLSX? [Y/N])
-│
-├─ 選取方格樣本 (Auto-select grids) 或自動選取已產生方格
-├─ 選取等高線樣本 (Select contour samples)
-├─ 確認計畫範圍 (Confirm boundary)
-├─ 指定報表插入點 (Pick table insertion point)
-│
-└─ 計算完成 (Process):
-    ├─ 計算坡度與方向 (Calculate slope & direction)
-    ├─ k-NN IDW 方向內插 (Interpolate missing directions)
-    ├─ 繪製標註與箭頭 (Draw annotations & arrows)
-    ├─ 產生統計摘要表 (Generate statistical summary tables)
-    └─ 匯出 XLSX (Export to XLSX)
-```
-
-**使用者手動修改後更新流程 (User-Initiated Update Workflow):**
-若使用者在圖面上**手動修改了交點數或坡向文字** (Manual Edits)：
-1. 執行 `GM2_Update`
-2. 系統讀取 NOD 暫存數據，掃描方格內的使用者文字 (DOM Scraping by Layer)
-3. 自動偵測方向文字變更並重繪對應箭頭 (Arrow auto-correction)
-4. 自動消除警告 (NOMUTT) 並重新產生坡度網底 (Hatch)
-5. 問答 `Regenerate Summary Table? [Y/N]`，若選擇 `Y` 則自動在原地覆蓋新表格
-6. 自動遞增檔名 (Increment filename) 防止 Excel 檔案鎖死，並輸出新 XLSX
-
-**獨立匯出 (Standalone Export):**
-若只需將圖面現有數據輸出至 Excel，無須重新計算或更新畫面：
-1. 執行 `GM3_Export`
-2. 系統讀取 NOD 參數並掃描畫面資料，直接輸出最新的 `.xlsx` 報表
-
----
 
 ###  成果輸出 (Generated Outputs)
 
