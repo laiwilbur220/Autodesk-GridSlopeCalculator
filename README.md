@@ -11,6 +11,8 @@
 - 智慧型方向內插 (k-NN IDW)：對於等高線交點不足的平坦區域，系統能自動以反距離權重法，從周圍 8 個最近的有效網格內插地形方向。
 - 即時圖面同步更新 (DOM-based Update)：支援設計師手動在 AutoCAD 內修改交點數或方向文字，系統能自動掃描圖層變更、校正箭頭指向，並即時重繪網底填色。
 - 原生 XLSX 報表匯出：無須安裝 Excel，直接將分析數據匯出為帶有動態公式的 `.xlsx` 檔案。
+- 高效能包絡盒預篩選 (AABB Pre-filter)：在等高線交點計算前，以包絡盒快速排除不可能相交的等高線，大幅減少不必要的 `IntersectWith` 運算。
+- 穩健的多邊形交集面積計算：使用 Clipper2 函式庫替代原生 Region 運算，解決複雜邊界下 `BooleanOperation` 容易崩潰的問題。
 
 ## 專案結構 (Project Structure)
 
@@ -19,15 +21,16 @@
 | 檔案 / 資料夾 | 說明 |
 |---|---|
 | `GridMethodSlopeCalculator.dll` | 供一般使用者直接載入 AutoCAD 的編譯完成檔 |
+| `Clipper2Lib.dll` | Clipper2 多邊形運算函式庫（必須與主 DLL 放在同一目錄） |
 | `GridMethodSlopeCalculator_Edit/` | 開發者專用目錄，內含原始碼 (`.cs`)、編譯腳本 (`build.bat`) 與相關 API 組件 |
 | `UNBLOCK.bat` | 解除 Windows 安全鎖定（ZIP 下載後必須執行） |
 | `README.md` | 使用說明書 |
-| `DetailedInfo_細節說明.md` | 相關細節說明 |
 
 ## 系統需求 (Prerequisites)
 
 - 環境：AutoCAD 2021 或更新版本 (相容於 Civil 3D)
 - 框架：.NET Framework 4.x
+- 相依套件：Clipper2Lib.dll（已隨專案附帶，須與主 DLL 放於同一目錄）
 - 編譯器：若需自行編譯，需使用內建的 `csc.exe` (C# 5)
 
 ***
@@ -42,6 +45,9 @@
 1. 開啟 AutoCAD 並載入您的 DWG 地形圖及計畫範圍(可視情況選擇是否預先建立網格)。
 2. 在命令列輸入 `NETLOAD`。
 3. 選取本專案目錄下的 `GridMethodSlopeCalculator.dll`。
+
+> [!NOTE]
+> `Clipper2Lib.dll` 必須與 `GridMethodSlopeCalculator.dll` 放在同一目錄下，AutoCAD 會自動載入此相依套件。
 
 ### 指令操作流程
 
@@ -135,17 +141,6 @@ GM3_Export
 The Grid Method calculates average grid slopes to legally delineate and review slopeland boundaries or determine slopeland utilization limits based on topographic maps.
 
 **二、計算方式 (Calculation Method)**
-<<<<<<< HEAD
-1. **劃設方格 (Draw a Grid):** 在實測地形圖上，每 10 公尺或 25 公尺畫一方格。
-2. **計算交點 (Count Intersections):** 算出每方格各邊與等高線相交的交點數量總和 (**n** 值)。
-3. **代入公式 (Apply Formula):** 利用專用公式求得坵塊內平均坡度：
-$$S(\%) = \frac{n \times \pi \times \Delta h}{8L} \times 100$$
-   * **S**: 方格內平均坡度 (%) / *Average slope*
-   * **n**: 等高線與方格四邊交點總數 / *Total intersections*
-   * **Δh**: 等高線間距 (公尺) / *Contour interval*
-   * **L**: 方格邊長 (公尺) / *Grid side length*
-=======
->>>>>>> 900ae2cec9329ff758bee9d11fcd8bd9f6d64526
 
 1. 劃設方格 (Draw a Grid)：在實測地形圖上，每 10 公尺或 25 公尺畫一方格。
 2. 計算交點 (Count Intersections)：算出每方格各邊與等高線相交的交點數量總和 (n 值)。
