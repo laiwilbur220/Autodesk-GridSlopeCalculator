@@ -12,6 +12,7 @@ using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
+using Clipper2Lib;
 
 namespace Civil3DGridMethod
 {
@@ -388,14 +389,6 @@ namespace Civil3DGridMethod
                         return;
                     }
 
-                    Region boundaryRegion = CreateFlatRegionFromCurve(baseBoundaryCurve, ed);
-                    if (boundaryRegion == null)
-                    {
-                        ed.WriteMessage("\nERROR: Failed to create planar boundary region.");
-                        return;
-                    }
-
-                    try
                     {
                         // ------------- STEP 4: PROCESS GRID CELLS -------------
                         BlockTable bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
@@ -418,8 +411,31 @@ namespace Civil3DGridMethod
 
                         List<GridData> validGrids = new List<GridData>();
 
+                        // Pre-cache contour bounding boxes for AABB early-exit optimization
+                        Extents3d[] contourExtents = new Extents3d[allContourCurves.Count];
+                        bool[] contourHasBounds = new bool[allContourCurves.Count];
+                        for (int ci = 0; ci < allContourCurves.Count; ci++)
+                        {
+                            Extents3d? ext = allContourCurves[ci].Bounds;
+                            if (ext.HasValue)
+                            {
+                                contourExtents[ci] = ext.Value;
+                                contourHasBounds[ci] = true;
+                            }
+                        }
+
+                        int totalGrids = preValidGrids.Count;
+                        int lastPct = -1;
                         for (int i = 0; i < preValidGrids.Count; i++)
                         {
+                            // Log progress every 10%
+                            int pct = (int)((double)(i + 1) / totalGrids * 100);
+                            if (pct / 10 > lastPct / 10)
+                            {
+                                ed.WriteMessage(string.Format("\n  Processing grids: {0}%  ({1}/{2})", pct, i + 1, totalGrids));
+                                lastPct = pct;
+                            }
+
                             GridData currentGrid = preValidGrids[i];
                             Polyline pline = tr.GetObject(currentGrid.Id, OpenMode.ForRead) as Polyline;
 
@@ -430,7 +446,7 @@ namespace Civil3DGridMethod
                                 continue;
                             }
 
-                            currentGrid.LappingArea = CalculateOverlapArea(pline, boundaryRegion, ed);
+                            currentGrid.LappingArea = CalculateOverlapArea(pline, baseBoundaryCurve, ed, tr);
                             if (currentGrid.LappingArea <= MinOverlapArea) continue;
 
                             List<Point3d> allGridIntersects = new List<Point3d>();
@@ -441,8 +457,16 @@ namespace Civil3DGridMethod
                                 {
                                     List<Point3d> uniqueSegmentPts = new List<Point3d>();
 
-                                    foreach (Curve contourCurve in allContourCurves)
+                                    for (int ci = 0; ci < allContourCurves.Count; ci++)
                                     {
+                                        Curve contourCurve = allContourCurves[ci];
+
+                                        // AABB pre-filter: skip contours whose bounding box doesn't overlap this edge
+                                        Extents3d? segExt = segment.Bounds;
+                                        if (segExt.HasValue && contourHasBounds[ci]
+                                            && !BoundsOverlapXY(segExt.Value, contourExtents[ci]))
+                                            continue;
+
                                         using (Point3dCollection rawPts = new Point3dCollection())
                                         {
                                             segment.IntersectWith(contourCurve, Intersect.OnBothOperands,
@@ -603,11 +627,6 @@ namespace Civil3DGridMethod
                         ed.WriteMessage(string.Format("\nSuccess! Processed {0} grids.", validGrids.Count));
                         ed.WriteMessage("\ngrid data has correctly updated\n");
                         
-                    }
-                    finally
-                    {
-                        if (boundaryRegion != null)
-                            boundaryRegion.Dispose();
                     }
                 }
             }
@@ -829,148 +848,144 @@ namespace Civil3DGridMethod
             double startY = ucsMinY - diffY;
             if (ucsMinY - startY < buffer) startY -= sideLength;
 
-            // Create boundary region for overlap testing
-            Region boundaryRegion = CreateFlatRegionFromCurve(boundaryCurve, ed);
-            if (boundaryRegion == null) return 0;
-
             ObjectId gridLayerId = GetOrCreateLayer(db, tr, gridLayerName, 180);
             int validCount = 0;
 
-            try
+            int cols = (int)Math.Ceiling((ucsMaxX - startX + buffer) / sideLength);
+            int rows = (int)Math.Ceiling((ucsMaxY - startY + buffer) / sideLength);
+            ed.WriteMessage(string.Format("\nBuilding {0} x {1} optimally shifted grid pattern...", cols, rows));
+
+            for (int row = 0; row < rows; row++)
             {
-                int cols = (int)Math.Ceiling((ucsMaxX - startX + buffer) / sideLength);
-                int rows = (int)Math.Ceiling((ucsMaxY - startY + buffer) / sideLength);
-                ed.WriteMessage(string.Format("\nBuilding {0} x {1} optimally shifted grid pattern...", cols, rows));
-
-                for (int row = 0; row < rows; row++)
+                for (int col = 0; col < cols; col++)
                 {
-                    for (int col = 0; col < cols; col++)
+                    double x = startX + col * sideLength;
+                    double y = startY + row * sideLength;
+
+                    // Grid corners in UCS transformed to WCS
+                    Point3d p1 = new Point3d(x, y, 0).TransformBy(ucs);
+                    Point3d p2 = new Point3d(x + sideLength, y, 0).TransformBy(ucs);
+                    Point3d p3 = new Point3d(x + sideLength, y + sideLength, 0).TransformBy(ucs);
+                    Point3d p4 = new Point3d(x, y + sideLength, 0).TransformBy(ucs);
+
+                    Polyline pl = new Polyline();
+                    pl.AddVertexAt(0, new Point2d(p1.X, p1.Y), 0, 0, 0);
+                    pl.AddVertexAt(1, new Point2d(p2.X, p2.Y), 0, 0, 0);
+                    pl.AddVertexAt(2, new Point2d(p3.X, p3.Y), 0, 0, 0);
+                    pl.AddVertexAt(3, new Point2d(p4.X, p4.Y), 0, 0, 0);
+                    pl.Closed = true;
+                    pl.LayerId = gridLayerId;
+
+                    btr.AppendEntity(pl);
+                    tr.AddNewlyCreatedDBObject(pl, true);
+
+                    // Check overlap with boundary - erase if no intersection
+                    double overlap = CalculateOverlapArea(pl, boundaryCurve, ed, tr);
+                    if (overlap <= MinOverlapArea)
                     {
-                        double x = startX + col * sideLength;
-                        double y = startY + row * sideLength;
-
-                        // Grid corners in UCS ??transformed to WCS
-                        Point3d p1 = new Point3d(x, y, 0).TransformBy(ucs);
-                        Point3d p2 = new Point3d(x + sideLength, y, 0).TransformBy(ucs);
-                        Point3d p3 = new Point3d(x + sideLength, y + sideLength, 0).TransformBy(ucs);
-                        Point3d p4 = new Point3d(x, y + sideLength, 0).TransformBy(ucs);
-
-                        Polyline pl = new Polyline();
-                        pl.AddVertexAt(0, new Point2d(p1.X, p1.Y), 0, 0, 0);
-                        pl.AddVertexAt(1, new Point2d(p2.X, p2.Y), 0, 0, 0);
-                        pl.AddVertexAt(2, new Point2d(p3.X, p3.Y), 0, 0, 0);
-                        pl.AddVertexAt(3, new Point2d(p4.X, p4.Y), 0, 0, 0);
-                        pl.Closed = true;
-                        pl.LayerId = gridLayerId;
-
-                        btr.AppendEntity(pl);
-                        tr.AddNewlyCreatedDBObject(pl, true);
-
-                        // Check overlap with boundary ??erase if no intersection
-                        // Strict limit to project boundary (move algorithm ensures no sticking)
-                        double overlap = CalculateOverlapArea(pl, boundaryRegion, ed);
-                        if (overlap <= MinOverlapArea)
-                        {
-                            pl.Erase();
-                        }
-                        else
-                        {
-                            validCount++;
-                        }
+                        pl.Erase();
+                    }
+                    else
+                    {
+                        validCount++;
                     }
                 }
-            }
-            finally
-            {
-                boundaryRegion.Dispose();
             }
 
             return validCount;
         }
 
         /// <summary>
-        /// Creates a flat (Z=0) Region from a curve, handling Polyline, Polyline2d, and Polyline3d.
-        /// Returns null if the region cannot be created.
+        /// Tests whether two Extents3d bounding boxes overlap in X and Y.
+        /// Used for AABB early-exit optimization in contour intersection loops.
         /// </summary>
-        private Region CreateFlatRegionFromCurve(Curve sourceCurve, Editor ed)
+        private static bool BoundsOverlapXY(Extents3d a, Extents3d b)
         {
-            try
-            {
-                using (Curve clone = sourceCurve.Clone() as Curve)
-                {
-                    // Flatten the curve to Z=0 for planar region creation
-                    if (clone is Polyline)
-                    {
-                        ((Polyline)clone).Closed = true;
-                        ((Polyline)clone).Elevation = 0.0;
-                    }
-                    else if (clone is Polyline2d)
-                    {
-                        ((Polyline2d)clone).Closed = true;
-                        ((Polyline2d)clone).Elevation = 0.0;
-                    }
-                    else if (clone is Polyline3d)
-                    {
-                        // 蝳?.1 ??Polyline3d has no Elevation property; vertices are 3D.
-                        // Region.CreateFromCurves may fail if non-planar ??catch handles with clear message.
-                        ((Polyline3d)clone).Closed = true;
-                    }
-
-                    DBObjectCollection curveCollection = new DBObjectCollection();
-                    curveCollection.Add(clone);
-                    DBObjectCollection regionCollection = Region.CreateFromCurves(curveCollection);
-                    if (regionCollection.Count > 0)
-                    {
-                        Region result = regionCollection[0] as Region;
-                        // Dispose any extra regions (unlikely but defensive)
-                        for (int i = 1; i < regionCollection.Count; i++)
-                            regionCollection[i].Dispose();
-                        return result;
-                    }
-                }
-            }
-            catch (Autodesk.AutoCAD.Runtime.Exception aCADEx)
-            {
-                ed.WriteMessage(string.Format(
-                    "\nERROR creating boundary Region: {0}. Ensure the boundary is planar and non-self-intersecting.",
-                    aCADEx.Message));
-            }
-            return null;
+            return a.MaxPoint.X >= b.MinPoint.X && a.MinPoint.X <= b.MaxPoint.X
+                && a.MaxPoint.Y >= b.MinPoint.Y && a.MinPoint.Y <= b.MaxPoint.Y;
         }
 
         /// <summary>
-        /// Computes the overlap area between a grid polyline and the project boundary via Boolean intersection.
-        /// Falls back to the raw polyline area with a warning if the operation fails.
+        /// Converts an AutoCAD curve's 2D vertex coordinates to a Clipper2 PathD.
+        /// Supports Polyline, Polyline2d, and Polyline3d.
         /// </summary>
-        private double CalculateOverlapArea(Polyline pline, Region boundaryRegion, Editor ed)
+        private PathD CurveToPathD(Curve curve, Transaction tr)
         {
-            Region gridRegion = null;
-            try
+            PathD path = new PathD();
+
+            Polyline pl = curve as Polyline;
+            if (pl != null)
             {
-                // Use CreateFlatRegionFromCurve to ensure the grid is fully planar at Z=0,
-                // fixing Boolean intersect failures for pre-existing grids drawn at elevations.
-                gridRegion = CreateFlatRegionFromCurve(pline, ed);
-                if (gridRegion != null)
+                for (int i = 0; i < pl.NumberOfVertices; i++)
                 {
-                    using (Region boundClone = boundaryRegion.Clone() as Region)
+                    Point2d pt = pl.GetPoint2dAt(i);
+                    path.Add(new PointD(pt.X, pt.Y));
+                }
+                return path;
+            }
+
+            Polyline2d p2d = curve as Polyline2d;
+            if (p2d != null && tr != null)
+            {
+                foreach (ObjectId vid in p2d)
+                {
+                    Vertex2d v = tr.GetObject(vid, OpenMode.ForRead) as Vertex2d;
+                    if (v != null)
                     {
-                        gridRegion.BooleanOperation(BooleanOperationType.BoolIntersect, boundClone);
-                        return gridRegion.Area;
+                        Point3d pos = p2d.VertexPosition(v);
+                        path.Add(new PointD(pos.X, pos.Y));
                     }
                 }
+                return path;
+            }
+
+            Polyline3d p3d = curve as Polyline3d;
+            if (p3d != null && tr != null)
+            {
+                foreach (ObjectId vid in p3d)
+                {
+                    PolylineVertex3d v = tr.GetObject(vid, OpenMode.ForRead) as PolylineVertex3d;
+                    if (v != null)
+                        path.Add(new PointD(v.Position.X, v.Position.Y));
+                }
+                return path;
+            }
+
+            return path;
+        }
+
+        /// <summary>
+        /// Computes the overlap area between a grid polyline and the project boundary
+        /// using Clipper2 polygon intersection. Handles collinear edges, micro-fragments,
+        /// and self-intersections without throwing.
+        /// </summary>
+        private double CalculateOverlapArea(Polyline gridPline, Curve boundaryCurve, Editor ed, Transaction tr)
+        {
+            try
+            {
+                PathD gridPath = CurveToPathD(gridPline, tr);
+                PathD boundPath = CurveToPathD(boundaryCurve, tr);
+
+                if (gridPath.Count < 3 || boundPath.Count < 3) return 0.0;
+
+                PathsD subj = new PathsD();
+                subj.Add(gridPath);
+                PathsD clip = new PathsD();
+                clip.Add(boundPath);
+
+                PathsD result = Clipper.Intersect(subj, clip, FillRule.NonZero, 2);
+
+                double totalArea = 0;
+                foreach (PathD rp in result)
+                    totalArea += Math.Abs(Clipper.Area(rp));
+
+                return totalArea;
             }
             catch (System.Exception ex)
             {
-                // log instead of silently swallowing
-                ed.WriteMessage(string.Format("\nWARNING: Boolean overlap failed for grid, using raw area. [{0}]", ex.Message));
-                return pline.Area;
+                ed.WriteMessage(string.Format("\nWARNING: Clipper2 overlap failed: {0}", ex.Message));
+                return 0.0;
             }
-            finally
-            {
-                if (gridRegion != null)
-                    gridRegion.Dispose();
-            }
-            return 0.0;
         }
 
         /// <summary>
@@ -1929,10 +1944,7 @@ namespace Civil3DGridMethod
                     Curve baseBoundaryCurve = tr.GetObject(perBoundary.ObjectId, OpenMode.ForRead) as Curve;
                     if (baseBoundaryCurve == null) { ed.WriteMessage("\nFailed to load boundary."); return; }
 
-                    Region boundaryRegion = CreateFlatRegionFromCurve(baseBoundaryCurve, ed);
-                    if (boundaryRegion == null) { ed.WriteMessage("\nERROR: Failed to create boundary region."); return; }
 
-                    try
                     {
                         BlockTable bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
                         BlockTableRecord btr = (BlockTableRecord)tr.GetObject(
@@ -1968,7 +1980,7 @@ namespace Civil3DGridMethod
                             Polyline pline = tr.GetObject(currentGrid.Id, OpenMode.ForRead) as Polyline;
                             if (pline == null || pline.NumberOfVertices < 4) continue;
 
-                            currentGrid.LappingArea = CalculateOverlapArea(pline, boundaryRegion, ed);
+                            currentGrid.LappingArea = CalculateOverlapArea(pline, baseBoundaryCurve, ed, tr);
                             if (currentGrid.LappingArea <= MinOverlapArea) continue;
 
                             // Build crossing polygon vertices for SelectCrossingPolygon
@@ -2268,10 +2280,6 @@ namespace Civil3DGridMethod
                         ed.WriteMessage("\ngrid data has correctly updated\n");
                         
                     }
-                    finally
-                    {
-                        if (boundaryRegion != null) boundaryRegion.Dispose();
-                    }
                 }
             }
             catch (System.Exception ex)
@@ -2323,10 +2331,6 @@ namespace Civil3DGridMethod
                     Curve baseBoundaryCurve = tr.GetObject(perBoundary.ObjectId, OpenMode.ForRead) as Curve;
                     if (baseBoundaryCurve == null) { ed.WriteMessage("\nFailed to load boundary."); return; }
 
-                    Region boundaryRegion = CreateFlatRegionFromCurve(baseBoundaryCurve, ed);
-                    if (boundaryRegion == null) { ed.WriteMessage("\nERROR: Failed to create boundary region."); return; }
-
-                    try
                     {
                         List<GridData> preValidGrids = GetValidGrids(tr, psrAllGrids, sideLength, ucs, ed);
                         if (preValidGrids.Count == 0) return;
@@ -2348,7 +2352,7 @@ namespace Civil3DGridMethod
                                 Polyline pline = tr.GetObject(currentGrid.Id, OpenMode.ForRead) as Polyline;
                                 if (pline == null || pline.NumberOfVertices < 4) continue;
 
-                                currentGrid.LappingArea = CalculateOverlapArea(pline, boundaryRegion, ed);
+                                currentGrid.LappingArea = CalculateOverlapArea(pline, baseBoundaryCurve, ed, tr);
                                 if (currentGrid.LappingArea <= MinOverlapArea) continue;
 
                                 Point3dCollection cellVerts = new Point3dCollection();
@@ -2443,10 +2447,6 @@ namespace Civil3DGridMethod
                         
                         tr.Commit();
                         ed.WriteMessage(string.Format("\nExport complete! Exported {0} grids to XLSX.", validGrids.Count));
-                    }
-                    finally
-                    {
-                        if (boundaryRegion != null) boundaryRegion.Dispose();
                     }
                 }
             }

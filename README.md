@@ -134,7 +134,8 @@
 **二、計算方式 (Calculation Method)**
 1. **劃設方格 (Draw a Grid):** 在實測地形圖上，每 10 公尺或 25 公尺畫一方格。
 2. **計算交點 (Count Intersections):** 算出每方格各邊與等高線相交的交點數量總和 (**n** 值)。
-3. **代入公式 (Apply Formula):** 利用專用公式求得坵塊內平均坡度：**S(%) = (n × π × Δh / 8L) × 100**
+3. **代入公式 (Apply Formula):** 利用專用公式求得坵塊內平均坡度：
+$$S(\%) = \frac{n \times \pi \times \Delta h}{8L} \times 100$$
    * **S**: 方格內平均坡度 (%) / *Average slope*
    * **n**: 等高線與方格四邊交點總數 / *Total intersections*
    * **Δh**: 等高線間距 (公尺) / *Contour interval*
